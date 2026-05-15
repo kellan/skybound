@@ -178,20 +178,55 @@
   }
   #intro-card button:active { transform: translateY(1px); }
 
-  #reset-btn {
-    pointer-events: auto;
+  /* Top-right stack: compass above, menu button below, panel anchored to menu */
+  #hud-top-right {
+    display: flex; flex-direction: column;
+    gap: 6px; align-items: flex-end;
+    pointer-events: none;
+  }
+  #menu-wrap { position: relative; pointer-events: auto; }
+  #menu-btn {
     background: var(--parchment);
     border: 1px solid var(--ink);
-    padding: 5px 9px;
+    border-radius: 50%;
+    width: 28px; height: 28px;
+    padding: 0;
     font-family: inherit;
-    font-size: 10px;
-    letter-spacing: 0.12em;
-    text-transform: uppercase;
+    font-size: 18px;
+    font-weight: 700;
+    line-height: 22px;
+    color: var(--ink-soft);
     cursor: pointer;
-    color: var(--ink);
     box-shadow: 0 2px 0 rgba(0,0,0,0.25);
   }
-  #reset-btn:active { transform: translateY(1px); box-shadow: 0 1px 0 rgba(0,0,0,0.25); }
+  #menu-btn:active { transform: translateY(1px); box-shadow: 0 1px 0 rgba(0,0,0,0.25); }
+  #menu-panel {
+    position: absolute;
+    top: calc(100% + 6px);
+    right: 0;
+    min-width: 140px;
+    background: var(--parchment);
+    border: 1px solid var(--ink);
+    box-shadow: 0 3px 0 rgba(0,0,0,0.3);
+    z-index: 25;
+    display: none;
+  }
+  #menu-panel.open { display: block; }
+  #menu-panel button {
+    display: block;
+    width: 100%;
+    background: none;
+    border: none;
+    padding: 10px 14px;
+    font-family: inherit;
+    font-size: 11px;
+    letter-spacing: 0.15em;
+    text-transform: uppercase;
+    color: var(--ink);
+    text-align: left;
+    cursor: pointer;
+  }
+  #menu-panel button:active { background: rgba(42, 36, 23, 0.1); }
 
   /* ===== Debug system ===== */
   #debug-toggle {
@@ -352,9 +387,14 @@
         Captain's Log
         <strong id="discovered-count">0 / 0 isles</strong>
       </div>
-      <div style="display:flex; flex-direction:column; gap:6px; align-items:flex-end;">
+      <div id="hud-top-right">
         <div id="compass"><div id="needle"></div></div>
-        <button id="reset-btn">New Voyage</button>
+        <div id="menu-wrap">
+          <button id="menu-btn" aria-label="Menu">⋯</button>
+          <div id="menu-panel" role="menu">
+            <button id="new-voyage-btn" role="menuitem">New Voyage</button>
+          </div>
+        </div>
       </div>
     </div>
 
@@ -1330,7 +1370,14 @@
     miniCtx.restore();
   }
 
+  // Debounce so multiple synthesized events (touchend + pointerup + click) on
+  // a single tap don't multi-toggle. Anything within the lock window after a
+  // toggle is ignored.
+  let toggleLockUntil = 0;
   function toggleMinimap(open) {
+    const now = performance.now();
+    if (now < toggleLockUntil) return;
+    toggleLockUntil = now + 280;
     const willOpen = open ?? !mapOverlay.classList.contains('open');
     mapOverlay.classList.toggle('open', willOpen);
     if (willOpen) {
@@ -1341,25 +1388,22 @@
     }
   }
 
-  // Wire compass and overlay taps. Bind multiple event types for WKWebView.
+  // Wire compass and overlay taps. `click` is the single canonical event here;
+  // we scoped touch-action away from body earlier so synthesized clicks fire
+  // normally in WKWebView.
   (() => {
     const compass = document.getElementById('compass');
     if (compass) {
-      ['click', 'touchend', 'pointerup'].forEach(t => {
-        compass.addEventListener(t, (e) => {
-          e.preventDefault?.();
-          e.stopPropagation?.();
-          toggleMinimap();
-        }, { passive: false });
+      compass.addEventListener('click', (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        toggleMinimap();
       });
     }
-    // Tap anywhere on the overlay backdrop to dismiss.
-    ['click', 'touchend', 'pointerup'].forEach(t => {
-      mapOverlay.addEventListener(t, (e) => {
-        e.preventDefault?.();
-        e.stopPropagation?.();
-        toggleMinimap(false);
-      }, { passive: false });
+    mapOverlay.addEventListener('click', (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      toggleMinimap(false);
     });
   })();
 
@@ -1586,18 +1630,44 @@
     window.__DBG?.boot('begin button wired', false, '#begin not found');
   }
 
-  const resetBtn = document.getElementById('reset-btn');
-  if (resetBtn) {
-    resetBtn.addEventListener('click', () => {
-      localStorage.removeItem('skybound-poc-v2');
-      state = newState();
-      camera.x = state.ship.x;
-      camera.y = state.ship.y;
-      lastRevealX = state.ship.x; lastRevealY = state.ship.y;
-      bakeFog();
-      window.__DBG?.push('info', 'new voyage');
+  // Menu (under the compass) — buries the destructive "New Voyage" action so
+  // it can't be hit by accident. Tap the ⋯ button to open, tap outside or
+  // pick an item to close.
+  (() => {
+    const menuBtn = document.getElementById('menu-btn');
+    const menuPanel = document.getElementById('menu-panel');
+    const newVoyageBtn = document.getElementById('new-voyage-btn');
+    if (!menuBtn || !menuPanel) return;
+
+    function setMenu(open) {
+      menuPanel.classList.toggle('open', open);
+    }
+
+    menuBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      setMenu(!menuPanel.classList.contains('open'));
     });
-  }
+
+    // Close on outside click (any tap not inside the menu wrap).
+    document.addEventListener('click', (e) => {
+      if (!menuPanel.classList.contains('open')) return;
+      if (!e.target.closest('#menu-wrap')) setMenu(false);
+    });
+
+    if (newVoyageBtn) {
+      newVoyageBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        setMenu(false);
+        localStorage.removeItem('skybound-poc-v2');
+        state = newState();
+        camera.x = state.ship.x;
+        camera.y = state.ship.y;
+        lastRevealX = state.ship.x; lastRevealY = state.ship.y;
+        bakeFog();
+        window.__DBG?.push('info', 'new voyage');
+      });
+    }
+  })();
 
   boot();
 })();
