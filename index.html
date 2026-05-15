@@ -78,7 +78,10 @@
     border-radius: 50%;
     position: relative;
     box-shadow: 0 2px 0 rgba(0,0,0,0.25);
+    pointer-events: auto;
+    cursor: pointer;
   }
+  #compass:active { transform: translateY(1px); box-shadow: 0 1px 0 rgba(0,0,0,0.25); }
   #compass::before {
     content: 'N';
     position: absolute; top: 2px; left: 50%;
@@ -284,6 +287,59 @@
     pointer-events: auto;
   }
   #error-pill.show { display: block; }
+
+  /* Mini-map overlay (toggled by tapping the compass) */
+  #map-overlay {
+    position: absolute;
+    inset: 0;
+    z-index: 30;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: rgba(8, 14, 22, 0.55);
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.18s ease;
+  }
+  #map-overlay.open { opacity: 1; pointer-events: auto; }
+  #map-card {
+    background: var(--parchment);
+    border: 1px solid var(--ink);
+    padding: 14px 14px 10px;
+    box-shadow: 0 6px 0 rgba(0,0,0,0.4);
+    position: relative;
+    width: min(88vw, 460px);
+    aspect-ratio: 9 / 8;
+  }
+  #map-card::before {
+    content: ''; position: absolute; inset: 4px;
+    border: 1px solid rgba(42,36,23,0.3);
+    pointer-events: none;
+  }
+  #map-header {
+    font-size: 10px;
+    letter-spacing: 0.22em;
+    text-transform: uppercase;
+    color: var(--ink-soft);
+    text-align: center;
+    font-variant: small-caps;
+    margin-bottom: 6px;
+  }
+  #map-hint {
+    position: absolute;
+    bottom: 6px; left: 0; right: 0;
+    font-size: 9px;
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+    color: var(--ink-soft);
+    text-align: center;
+    opacity: 0.6;
+  }
+  #minimap {
+    display: block;
+    width: 100%;
+    height: calc(100% - 28px);
+  }
 </style>
 </head>
 <body>
@@ -327,6 +383,15 @@
         <p>Tap anywhere on the map to chart a course. Your skyship will turn slowly and drift to a stop.</p>
         <p>Sail close to islands to discover them. The fog you part stays parted.</p>
         <button id="begin">Set Sail</button>
+      </div>
+    </div>
+
+    <!-- Mini-map overlay -->
+    <div id="map-overlay">
+      <div id="map-card">
+        <div id="map-header">Chart</div>
+        <canvas id="minimap"></canvas>
+        <div id="map-hint">Tap to close</div>
       </div>
     </div>
 
@@ -1149,6 +1214,155 @@
     ctx.stroke();
   }
 
+  // ----- Mini-map -----
+  const miniCanvas = document.getElementById('minimap');
+  const miniCtx = miniCanvas.getContext('2d');
+  const mapOverlay = document.getElementById('map-overlay');
+  let miniW = 0, miniH = 0;
+
+  function resizeMinimap() {
+    const rect = miniCanvas.getBoundingClientRect();
+    if (rect.width === 0 || rect.height === 0) return;
+    miniW = rect.width; miniH = rect.height;
+    miniCanvas.width = Math.floor(miniW * dpr);
+    miniCanvas.height = Math.floor(miniH * dpr);
+    miniCtx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  }
+  window.addEventListener('resize', () => {
+    if (mapOverlay.classList.contains('open')) resizeMinimap();
+  });
+
+  function drawMinimap() {
+    if (!mapOverlay.classList.contains('open')) return;
+    if (miniW === 0) resizeMinimap();
+    if (miniW === 0) return;
+
+    // Parchment background tone (the card itself is parchment; this is the "sea")
+    miniCtx.fillStyle = 'rgba(232, 218, 188, 1)';
+    miniCtx.fillRect(0, 0, miniW, miniH);
+
+    // Fit ellipse inside canvas with a small inner margin.
+    const margin = 14;
+    const scale = Math.min(
+      (miniW - margin * 2) / (WORLD.rx * 2),
+      (miniH - margin * 2) / (WORLD.ry * 2),
+    );
+    const ox = miniW / 2 - WORLD.cx * scale;
+    const oy = miniH / 2 - WORLD.cy * scale;
+    const wx = (x) => ox + x * scale;
+    const wy = (y) => oy + y * scale;
+
+    // Cloud-wall ring (soft band)
+    miniCtx.save();
+    miniCtx.translate(wx(WORLD.cx), wy(WORLD.cy));
+    miniCtx.scale(WORLD.rx * scale, WORLD.ry * scale);
+    const ring = miniCtx.createRadialGradient(0, 0, 0.82, 0, 0, 1.05);
+    ring.addColorStop(0, 'rgba(148, 170, 198, 0)');
+    ring.addColorStop(1, 'rgba(148, 170, 198, 0.6)');
+    miniCtx.fillStyle = ring;
+    miniCtx.beginPath();
+    miniCtx.arc(0, 0, 1.05, 0, Math.PI * 2);
+    miniCtx.fill();
+    miniCtx.restore();
+
+    // Ellipse outline
+    miniCtx.beginPath();
+    miniCtx.ellipse(wx(WORLD.cx), wy(WORLD.cy), WORLD.rx * scale, WORLD.ry * scale, 0, 0, Math.PI * 2);
+    miniCtx.strokeStyle = 'rgba(42, 36, 23, 0.55)';
+    miniCtx.lineWidth = 1;
+    miniCtx.stroke();
+
+    // Discovered islands as small dots with names; undiscovered hidden.
+    miniCtx.font = "italic 10px Georgia, serif";
+    miniCtx.textBaseline = 'top';
+    for (const i of state.islands) {
+      if (!i.discovered) continue;
+      const x = wx(i.x), y = wy(i.y);
+      miniCtx.beginPath();
+      miniCtx.arc(x, y, 3, 0, Math.PI * 2);
+      miniCtx.fillStyle = '#3a4a2e';
+      miniCtx.fill();
+      miniCtx.strokeStyle = 'rgba(42, 36, 23, 0.7)';
+      miniCtx.lineWidth = 0.8;
+      miniCtx.stroke();
+
+      // Name tucked to the right; clipped to canvas.
+      const label = i.name;
+      const lw = miniCtx.measureText(label).width;
+      let tx = x + 5, ty = y - 5;
+      if (tx + lw > miniW - 4) tx = x - 5 - lw;
+      miniCtx.fillStyle = 'rgba(42, 36, 23, 0.85)';
+      miniCtx.fillText(label, tx, ty);
+    }
+
+    // Target marker
+    if (state.target) {
+      const x = wx(state.target.x), y = wy(state.target.y);
+      miniCtx.strokeStyle = 'rgba(201, 98, 46, 0.95)';
+      miniCtx.lineWidth = 1.4;
+      miniCtx.beginPath();
+      miniCtx.arc(x, y, 5, 0, Math.PI * 2);
+      miniCtx.stroke();
+      miniCtx.beginPath();
+      miniCtx.moveTo(x - 7, y); miniCtx.lineTo(x - 3, y);
+      miniCtx.moveTo(x + 3, y); miniCtx.lineTo(x + 7, y);
+      miniCtx.moveTo(x, y - 7); miniCtx.lineTo(x, y - 3);
+      miniCtx.moveTo(x, y + 3); miniCtx.lineTo(x, y + 7);
+      miniCtx.stroke();
+    }
+
+    // Ship: arrowhead pointing along heading
+    const sx = wx(state.ship.x), sy = wy(state.ship.y);
+    miniCtx.save();
+    miniCtx.translate(sx, sy);
+    miniCtx.rotate(state.ship.heading);
+    miniCtx.beginPath();
+    miniCtx.moveTo(7, 0);
+    miniCtx.lineTo(-5, 4);
+    miniCtx.lineTo(-3, 0);
+    miniCtx.lineTo(-5, -4);
+    miniCtx.closePath();
+    miniCtx.fillStyle = '#c9622e';
+    miniCtx.fill();
+    miniCtx.strokeStyle = '#2a2417';
+    miniCtx.lineWidth = 1;
+    miniCtx.stroke();
+    miniCtx.restore();
+  }
+
+  function toggleMinimap(open) {
+    const willOpen = open ?? !mapOverlay.classList.contains('open');
+    mapOverlay.classList.toggle('open', willOpen);
+    if (willOpen) {
+      resizeMinimap();
+      window.__DBG?.push('info', 'chart opened');
+    } else {
+      window.__DBG?.push('info', 'chart closed');
+    }
+  }
+
+  // Wire compass and overlay taps. Bind multiple event types for WKWebView.
+  (() => {
+    const compass = document.getElementById('compass');
+    if (compass) {
+      ['click', 'touchend', 'pointerup'].forEach(t => {
+        compass.addEventListener(t, (e) => {
+          e.preventDefault?.();
+          e.stopPropagation?.();
+          toggleMinimap();
+        }, { passive: false });
+      });
+    }
+    // Tap anywhere on the overlay backdrop to dismiss.
+    ['click', 'touchend', 'pointerup'].forEach(t => {
+      mapOverlay.addEventListener(t, (e) => {
+        e.preventDefault?.();
+        e.stopPropagation?.();
+        toggleMinimap(false);
+      }, { passive: false });
+    });
+  })();
+
   function render() {
     // Clear
     ctx.fillStyle = '#1a2330';
@@ -1218,6 +1432,8 @@
     vg.addColorStop(1, 'rgba(10,15,25,0.55)');
     ctx.fillStyle = vg;
     ctx.fillRect(0, 0, viewW, viewH);
+
+    drawMinimap();
   }
 
   // ----- HUD updates -----
