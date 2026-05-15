@@ -1069,6 +1069,67 @@
     ctx.restore();
   }
 
+  // For each discovered island that's off-screen, draw a small parchment chip
+  // at the inner viewport rim along the line from screen center toward the
+  // island, so it acts as a directional waypoint. Closer = more opaque.
+  function drawEdgeLabels() {
+    // Inner rect the labels live inside (avoids top bar and bottom HUD).
+    const padX = 14;
+    const padTop = 70;
+    const padBottom = 130;
+    const minX = padX, maxX = viewW - padX;
+    const minY = padTop, maxY = viewH - padBottom;
+    const ccx = viewW / 2, ccy = viewH / 2;
+
+    ctx.font = "italic 11px Georgia, serif";
+    ctx.textBaseline = 'alphabetic';
+
+    for (const i of state.islands) {
+      if (!i.discovered) continue;
+
+      const ix = i.x - camera.x + ccx;
+      const iy = i.y - camera.y + ccy;
+
+      // Skip if the island itself is visible on-screen — its in-world label is
+      // already showing.
+      const onScreenMargin = 50;
+      if (ix > -onScreenMargin && ix < viewW + onScreenMargin &&
+          iy > -onScreenMargin && iy < viewH + onScreenMargin) continue;
+
+      // Intersect ray (center → island) with the inner rect.
+      const dx = ix - ccx, dy = iy - ccy;
+      if (dx === 0 && dy === 0) continue;
+      const tx = dx > 0 ? (maxX - ccx) / dx : (minX - ccx) / dx;
+      const ty = dy > 0 ? (maxY - ccy) / dy : (minY - ccy) / dy;
+      const t = Math.min(tx, ty);
+      const ex = ccx + dx * t;
+      const ey = ccy + dy * t;
+
+      // Distance fade — far islands quieter so the rim doesn't crowd.
+      const dist = Math.hypot(i.x - state.ship.x, i.y - state.ship.y);
+      const fade = Math.max(0.35, Math.min(1, 1 - (dist - 600) / 2400));
+
+      const label = i.name;
+      const tw = ctx.measureText(label).width;
+      const chipW = tw + 12, chipH = 16;
+
+      // Position the chip just inside the rim, clamped so it stays in the inner rect.
+      let lx = ex - chipW / 2;
+      let ly = ey - chipH / 2;
+      lx = Math.max(minX, Math.min(maxX - chipW, lx));
+      ly = Math.max(minY, Math.min(maxY - chipH, ly));
+
+      ctx.fillStyle = `rgba(232, 220, 192, ${0.82 * fade})`;
+      ctx.fillRect(lx, ly, chipW, chipH);
+      ctx.strokeStyle = `rgba(42, 36, 23, ${0.7 * fade})`;
+      ctx.lineWidth = 1;
+      ctx.strokeRect(lx, ly, chipW, chipH);
+
+      ctx.fillStyle = `rgba(42, 36, 23, ${0.95 * fade})`;
+      ctx.fillText(label, lx + 6, ly + chipH - 4);
+    }
+  }
+
   function drawTargetMarker() {
     if (!state.target) return;
     const sx = state.target.x - camera.x + viewW / 2;
@@ -1109,10 +1170,6 @@
       drawIsland(i, i.x, i.y);
     }
 
-    // World boundary cloud-wall (over islands so edge islands tuck behind it,
-    // under the ship so the player is never obscured).
-    drawWorldBoundary();
-
     // Ship
     drawShip(state.ship.x, state.ship.y, state.ship.heading);
 
@@ -1138,6 +1195,19 @@
       try { ctx.drawImage(fogCanvas, srcX, srcY, srcW, srcH, dstX, dstY, dstW, dstH); }
       catch (e) { /* swallow rather than kill the loop */ }
     }
+
+    // World boundary cloud-wall — drawn on top of fog so the rectangular fog
+    // canvas seam beyond the ellipse is hidden by the wall instead of poking
+    // through as visible square edges.
+    ctx.save();
+    ctx.translate(viewW / 2 - camera.x, viewH / 2 - camera.y);
+    drawWorldBoundary();
+    ctx.restore();
+
+    // Off-screen waypoint chips: small parchment labels at the viewport rim
+    // pointing toward each discovered island so the player can find their way
+    // back. Closer islands ride higher on the alpha scale.
+    drawEdgeLabels();
 
     // Target marker on top of fog (so you can see it through fog faintly)
     drawTargetMarker();
