@@ -1052,19 +1052,21 @@
       ctx.fill();
     }
 
-    // Inner falloff: stacked translucent strokes fading inward
-    const bands = [
-      { dr: -170, w: 70, a: 0.10 },
-      { dr:  -95, w: 80, a: 0.18 },
-      { dr:  -30, w: 70, a: 0.28 },
-    ];
-    for (const b of bands) {
-      ctx.beginPath();
-      ctx.ellipse(cx, cy, rx + b.dr, ry + b.dr, 0, 0, Math.PI * 2);
-      ctx.strokeStyle = `rgba(180, 200, 222, ${b.a})`;
-      ctx.lineWidth = b.w;
-      ctx.stroke();
-    }
+    // Inner falloff: one smooth radial gradient on the ellipse, achieved by
+    // scaling into unit-disk space so a radial gradient becomes elliptical.
+    // Fades from transparent at ~78% radius to the cloud color at the rim,
+    // matching the solid fill outside so the seam is invisible.
+    ctx.save();
+    ctx.translate(cx, cy);
+    ctx.scale(rx, ry);
+    const fall = ctx.createRadialGradient(0, 0, 0.78, 0, 0, 1.0);
+    fall.addColorStop(0, 'rgba(148, 170, 198, 0)');
+    fall.addColorStop(1, 'rgba(148, 170, 198, 0.92)');
+    ctx.fillStyle = fall;
+    ctx.beginPath();
+    ctx.arc(0, 0, 1, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
   }
 
   function drawTargetMarker() {
