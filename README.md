@@ -4,7 +4,7 @@ A proof of concept for a larger game project. Web-based, mobile-first (vertical 
 
 ## Current state
 
-A single-file HTML/JS/CSS prototype at `skybound-poc.html`. Zero dependencies, no build step. Works in any modern browser including iOS WKWebView (Claude's in-app web viewer).
+A single-file HTML/JS/CSS prototype at `index.html`. Zero dependencies, no build step. Works in any modern browser including iOS WKWebView (Claude's in-app web viewer). Deployed via GitHub Pages from `main` so each push is testable at a live URL.
 
 ### What's implemented
 
