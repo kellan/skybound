@@ -1,0 +1,1235 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover" />
+<title>Skybound — Navigation POC</title>
+<style>
+  :root {
+    --ink: #2a2417;
+    --ink-soft: #5c4f37;
+    --parchment: #e8dcc0;
+    --parchment-light: #f2e8d0;
+    --sky-deep: #4a6b8a;
+    --sky-mid: #7ea3c1;
+    --sky-warm: #d4b88c;
+    --accent: #c9622e;
+    --fog: #1a2330;
+  }
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body {
+    margin: 0; padding: 0; height: 100%; width: 100%;
+    overflow: hidden; background: var(--fog);
+    font-family: 'Georgia', 'Iowan Old Style', serif;
+    color: var(--ink);
+    user-select: none; -webkit-user-select: none;
+    overscroll-behavior: none;
+  }
+  /* Only suppress touch gestures on the canvas, not everywhere.
+     Body-wide touch-action:none breaks button taps in iOS WKWebView. */
+  canvas#world { touch-action: none; }
+  button { touch-action: manipulation; }
+  #stage {
+    position: fixed; inset: 0;
+    display: flex; flex-direction: column;
+  }
+  #map-wrap {
+    position: relative; flex: 1; overflow: hidden;
+    background: radial-gradient(ellipse at 50% 30%, #5a7a96 0%, #2d4258 60%, #1a2330 100%);
+  }
+  canvas#world { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
+
+  /* HUD top bar */
+  #top-bar {
+    position: absolute; top: 0; left: 0; right: 0;
+    padding: env(safe-area-inset-top, 12px) 14px 10px;
+    display: flex; justify-content: space-between; align-items: flex-start;
+    pointer-events: none;
+    background: linear-gradient(to bottom, rgba(26,35,48,0.55), transparent);
+    z-index: 5;
+  }
+  .badge {
+    background: var(--parchment);
+    border: 1px solid var(--ink);
+    border-radius: 2px;
+    padding: 6px 10px;
+    font-size: 11px;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--ink);
+    box-shadow: 0 2px 0 rgba(0,0,0,0.25);
+    pointer-events: auto;
+  }
+  .badge strong {
+    display: block;
+    font-size: 14px;
+    letter-spacing: 0.05em;
+    text-transform: none;
+    font-weight: 700;
+    margin-top: 2px;
+  }
+  .badge.small { font-size: 10px; padding: 5px 8px; }
+
+  /* Compass */
+  #compass {
+    width: 52px; height: 52px;
+    background: var(--parchment);
+    border: 1px solid var(--ink);
+    border-radius: 50%;
+    position: relative;
+    box-shadow: 0 2px 0 rgba(0,0,0,0.25);
+  }
+  #compass::before {
+    content: 'N';
+    position: absolute; top: 2px; left: 50%;
+    transform: translateX(-50%);
+    font-size: 9px; font-weight: 700;
+    color: var(--ink-soft);
+  }
+  #needle {
+    position: absolute; top: 50%; left: 50%;
+    width: 2px; height: 22px;
+    background: linear-gradient(to bottom, var(--accent) 0%, var(--accent) 50%, var(--ink-soft) 50%, var(--ink-soft) 100%);
+    transform-origin: 50% 100%;
+    transform: translate(-50%, -100%) rotate(0deg);
+    transition: transform 0.15s linear;
+  }
+
+  /* Bottom HUD */
+  #bottom-bar {
+    position: absolute; bottom: 0; left: 0; right: 0;
+    padding: 14px 14px calc(env(safe-area-inset-bottom, 12px) + 14px);
+    background: linear-gradient(to top, rgba(26,35,48,0.7), transparent);
+    pointer-events: none;
+    z-index: 5;
+  }
+  #status-card {
+    background: var(--parchment);
+    border: 1px solid var(--ink);
+    border-radius: 2px;
+    padding: 10px 12px;
+    pointer-events: auto;
+    box-shadow: 0 3px 0 rgba(0,0,0,0.3);
+    position: relative;
+  }
+  #status-card::before {
+    content: ''; position: absolute;
+    inset: 3px;
+    border: 1px solid rgba(42,36,23,0.3);
+    pointer-events: none;
+  }
+  .row { display: flex; justify-content: space-between; align-items: baseline; }
+  .label { font-size: 10px; letter-spacing: 0.18em; text-transform: uppercase; color: var(--ink-soft); }
+  .value { font-size: 13px; font-weight: 700; color: var(--ink); }
+  #destination-name { font-size: 15px; font-style: italic; }
+  .divider {
+    height: 1px;
+    background: linear-gradient(to right, transparent, var(--ink-soft), transparent);
+    margin: 8px 0;
+    opacity: 0.5;
+  }
+
+  /* Instruction overlay */
+  #intro {
+    position: absolute; inset: 0;
+    display: flex; align-items: center; justify-content: center;
+    background: rgba(26,35,48,0.85);
+    z-index: 20;
+    transition: opacity 0.5s ease;
+  }
+  #intro.gone { opacity: 0; pointer-events: none; }
+  #intro-card {
+    background: var(--parchment);
+    border: 1px solid var(--ink);
+    padding: 24px 22px;
+    max-width: 280px;
+    text-align: center;
+    box-shadow: 0 6px 0 rgba(0,0,0,0.4);
+    position: relative;
+  }
+  #intro-card::before {
+    content: ''; position: absolute; inset: 4px;
+    border: 1px solid rgba(42,36,23,0.3);
+  }
+  #intro-card h1 {
+    margin: 0 0 4px; font-size: 22px; letter-spacing: 0.04em;
+    font-variant: small-caps;
+  }
+  #intro-card .sub {
+    font-size: 11px; letter-spacing: 0.2em; text-transform: uppercase;
+    color: var(--ink-soft); margin-bottom: 16px;
+  }
+  #intro-card p { font-size: 13px; line-height: 1.5; margin: 8px 0; }
+  #intro-card button {
+    margin-top: 16px;
+    background: var(--ink);
+    color: var(--parchment-light);
+    border: none;
+    padding: 10px 24px;
+    font-family: inherit;
+    font-size: 12px;
+    letter-spacing: 0.15em;
+    text-transform: uppercase;
+    cursor: pointer;
+    border-radius: 1px;
+  }
+  #intro-card button:active { transform: translateY(1px); }
+
+  #reset-btn {
+    pointer-events: auto;
+    background: var(--parchment);
+    border: 1px solid var(--ink);
+    padding: 5px 9px;
+    font-family: inherit;
+    font-size: 10px;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    cursor: pointer;
+    color: var(--ink);
+    box-shadow: 0 2px 0 rgba(0,0,0,0.25);
+  }
+  #reset-btn:active { transform: translateY(1px); box-shadow: 0 1px 0 rgba(0,0,0,0.25); }
+
+  /* ===== Debug system ===== */
+  #debug-toggle {
+    position: absolute;
+    top: env(safe-area-inset-top, 12px); left: 14px;
+    width: 28px; height: 28px;
+    background: rgba(0,0,0,0.55);
+    border: 1px solid rgba(255,155,106,0.6);
+    color: #ff9b6a;
+    font: 700 12px/28px monospace;
+    text-align: center;
+    border-radius: 50%;
+    z-index: 40;
+    cursor: pointer;
+    user-select: none;
+    pointer-events: auto;
+    transition: background 0.15s;
+  }
+  #debug-toggle.active {
+    background: #ff9b6a; color: #1a2330;
+  }
+  #debug-panel {
+    position: absolute;
+    top: 50px; left: 8px; right: 8px;
+    max-height: 60vh;
+    background: rgba(8, 12, 20, 0.92);
+    border: 1px solid rgba(255,155,106,0.4);
+    color: #d8e4f0;
+    font: 10px/1.35 ui-monospace, 'SF Mono', Menlo, monospace;
+    padding: 8px 10px;
+    z-index: 35;
+    border-radius: 3px;
+    display: none;
+    overflow: hidden;
+    pointer-events: auto;
+  }
+  #debug-panel.open { display: flex; flex-direction: column; gap: 6px; }
+  #debug-stats {
+    display: grid;
+    grid-template-columns: auto 1fr;
+    gap: 1px 8px;
+    font-size: 10px;
+  }
+  #debug-stats .k { color: #ff9b6a; }
+  #debug-stats .v { color: #d8e4f0; word-break: break-all; }
+  #debug-stats .v.warn { color: #ffd86a; }
+  #debug-stats .v.err { color: #ff6a6a; }
+  #debug-log {
+    flex: 1;
+    overflow-y: auto;
+    border-top: 1px solid rgba(255,155,106,0.25);
+    padding-top: 6px;
+    margin-top: 2px;
+    font-size: 9.5px;
+    max-height: 28vh;
+  }
+  #debug-log .row { display: flex; gap: 6px; margin-bottom: 1px; }
+  #debug-log .t { color: #7a8a9a; flex-shrink: 0; }
+  #debug-log .m { word-break: break-word; }
+  #debug-log .m.err { color: #ff6a6a; }
+  #debug-log .m.warn { color: #ffd86a; }
+  #debug-log .m.info { color: #9adcff; }
+  #debug-log .m.ok { color: #a0e69e; }
+  #debug-actions { display: flex; gap: 6px; flex-wrap: wrap; }
+  .debug-btn {
+    background: rgba(255,155,106,0.15);
+    border: 1px solid rgba(255,155,106,0.5);
+    color: #ff9b6a;
+    font: 700 9px/1 monospace;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    padding: 5px 8px;
+    cursor: pointer;
+    border-radius: 2px;
+  }
+  .debug-btn:active { background: rgba(255,155,106,0.3); }
+
+  /* Persistent error pill — shows even when panel closed */
+  #error-pill {
+    position: absolute;
+    top: env(safe-area-inset-top, 12px); left: 50px;
+    background: #ff3b30;
+    color: white;
+    font: 700 10px/1 monospace;
+    padding: 6px 10px;
+    border-radius: 12px;
+    z-index: 36;
+    display: none;
+    max-width: calc(100vw - 130px);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    pointer-events: auto;
+  }
+  #error-pill.show { display: block; }
+</style>
+</head>
+<body>
+<div id="stage">
+  <div id="map-wrap">
+    <canvas id="world"></canvas>
+
+    <div id="top-bar">
+      <div class="badge">
+        Captain's Log
+        <strong id="discovered-count">0 / 0 isles</strong>
+      </div>
+      <div style="display:flex; flex-direction:column; gap:6px; align-items:flex-end;">
+        <div id="compass"><div id="needle"></div></div>
+        <button id="reset-btn">New Voyage</button>
+      </div>
+    </div>
+
+    <div id="bottom-bar">
+      <div id="status-card">
+        <div class="row">
+          <span class="label">Heading</span>
+          <span class="value" id="heading-val">—</span>
+        </div>
+        <div class="divider"></div>
+        <div class="row">
+          <span class="label">Bound for</span>
+          <span class="value" id="destination-name">Adrift</span>
+        </div>
+        <div class="row" style="margin-top:4px;">
+          <span class="label">Distance</span>
+          <span class="value" id="distance-val">—</span>
+        </div>
+      </div>
+    </div>
+
+    <div id="intro">
+      <div id="intro-card">
+        <h1>Skybound</h1>
+        <div class="sub">Navigation POC</div>
+        <p>Tap anywhere on the map to chart a course. Your skyship will turn slowly and drift to a stop.</p>
+        <p>Sail close to islands to discover them. The fog you part stays parted.</p>
+        <button id="begin">Set Sail</button>
+      </div>
+    </div>
+
+    <!-- Debug UI -->
+    <div id="debug-toggle" title="Toggle debug">D</div>
+    <div id="error-pill"></div>
+    <div id="debug-panel">
+      <div id="debug-stats">
+        <span class="k">boot</span><span class="v" id="dbg-boot">—</span>
+        <span class="k">loop</span><span class="v" id="dbg-loop">—</span>
+        <span class="k">fps</span><span class="v" id="dbg-fps">—</span>
+        <span class="k">view</span><span class="v" id="dbg-view">—</span>
+        <span class="k">ship</span><span class="v" id="dbg-ship">—</span>
+        <span class="k">cam</span><span class="v" id="dbg-cam">—</span>
+        <span class="k">target</span><span class="v" id="dbg-target">—</span>
+        <span class="k">reveals</span><span class="v" id="dbg-reveals">—</span>
+        <span class="k">errors</span><span class="v" id="dbg-errors">0</span>
+      </div>
+      <div id="debug-log"></div>
+      <div id="debug-actions">
+        <button class="debug-btn" id="dbg-clear">Clear Log</button>
+        <button class="debug-btn" id="dbg-wipe">Wipe Save</button>
+        <button class="debug-btn" id="dbg-teleport">Teleport Random</button>
+        <button class="debug-btn" id="dbg-reveal-all">Reveal All</button>
+        <button class="debug-btn" id="dbg-copy">Copy Log</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+/* ============================================================
+   DEBUG SUBSYSTEM — must load before main script so we can
+   catch parse/runtime errors from the main game script too.
+   ============================================================ */
+(() => {
+  const DBG = {
+    enabled: false,
+    errors: 0,
+    log: [],         // [{t, level, msg}]
+    bootSteps: [],   // ordered list of init checkpoints
+    fps: { last: performance.now(), frames: 0, value: 0 },
+  };
+  window.__DBG = DBG;
+
+  function ts() {
+    const d = new Date();
+    return d.toLocaleTimeString('en-GB', { hour12: false }) + '.' +
+           String(d.getMilliseconds()).padStart(3, '0');
+  }
+
+  DBG.push = function(level, msg) {
+    const entry = { t: ts(), level, msg: String(msg) };
+    DBG.log.push(entry);
+    if (DBG.log.length > 200) DBG.log.shift();
+    if (level === 'err') {
+      DBG.errors++;
+      showErrorPill(msg);
+    }
+    renderLog();
+  };
+
+  DBG.boot = function(step, ok = true, detail = '') {
+    DBG.bootSteps.push({ step, ok, detail });
+    DBG.push(ok ? 'ok' : 'err', `BOOT ${ok ? '✓' : '✗'} ${step}${detail ? ' — ' + detail : ''}`);
+  };
+
+  function showErrorPill(msg) {
+    const pill = document.getElementById('error-pill');
+    if (!pill) return;
+    pill.textContent = 'ERR: ' + msg;
+    pill.classList.add('show');
+  }
+
+  function renderLog() {
+    if (!DBG.enabled) return;
+    const el = document.getElementById('debug-log');
+    if (!el) return;
+    // Render last 60 entries
+    const slice = DBG.log.slice(-60);
+    el.innerHTML = slice.map(e =>
+      `<div class="row"><span class="t">${e.t.slice(-9)}</span><span class="m ${e.level}">${escapeHtml(e.msg)}</span></div>`
+    ).join('');
+    el.scrollTop = el.scrollHeight;
+  }
+
+  function escapeHtml(s) {
+    return s.replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+  }
+
+  // Wire global error capture EARLY
+  window.addEventListener('error', (e) => {
+    const where = (e.filename || '').split('/').pop() + ':' + (e.lineno || '?') + ':' + (e.colno || '?');
+    DBG.push('err', `${e.message || 'unknown error'} @ ${where}`);
+  });
+  window.addEventListener('unhandledrejection', (e) => {
+    const r = e.reason;
+    DBG.push('err', 'unhandled: ' + (r && r.message ? r.message : String(r)));
+  });
+
+  // Toggle wiring — must wait for DOMContentLoaded since this script
+  // is in <head> position; if loaded after body, can run immediately.
+  function wireDebugUI() {
+    const toggle = document.getElementById('debug-toggle');
+    const panel = document.getElementById('debug-panel');
+    const pill = document.getElementById('error-pill');
+    if (!toggle || !panel) return;
+
+    function setEnabled(on) {
+      DBG.enabled = on;
+      toggle.classList.toggle('active', on);
+      panel.classList.toggle('open', on);
+      if (on) {
+        renderLog();
+        renderStats();
+        if (pill) pill.classList.remove('show');
+      }
+    }
+
+    toggle.addEventListener('click', () => setEnabled(!DBG.enabled));
+    if (pill) pill.addEventListener('click', () => setEnabled(true));
+
+    // Triple-tap anywhere on the top edge as a backup discovery gesture
+    let taps = []; const TAP_WIN = 600;
+    document.addEventListener('pointerdown', (e) => {
+      if (e.clientY > 60) return;
+      const now = performance.now();
+      taps = taps.filter(t => now - t < TAP_WIN);
+      taps.push(now);
+      if (taps.length >= 3) { taps = []; setEnabled(!DBG.enabled); }
+    });
+
+    // Action buttons
+    const byId = (id) => document.getElementById(id);
+    byId('dbg-clear')?.addEventListener('click', () => {
+      DBG.log = []; DBG.errors = 0;
+      renderLog();
+      const errEl = byId('dbg-errors'); if (errEl) errEl.textContent = '0';
+      if (pill) pill.classList.remove('show');
+    });
+    byId('dbg-wipe')?.addEventListener('click', () => {
+      try { localStorage.removeItem('skybound-poc-v1'); DBG.push('info', 'localStorage wiped'); }
+      catch(e) { DBG.push('err', 'wipe failed: ' + e.message); }
+    });
+    byId('dbg-teleport')?.addEventListener('click', () => {
+      if (window.__game) window.__game.teleportRandom();
+      else DBG.push('warn', 'game not booted');
+    });
+    byId('dbg-reveal-all')?.addEventListener('click', () => {
+      if (window.__game) window.__game.revealAll();
+      else DBG.push('warn', 'game not booted');
+    });
+    byId('dbg-copy')?.addEventListener('click', () => {
+      const text = DBG.log.map(e => `${e.t} [${e.level}] ${e.msg}`).join('\n');
+      navigator.clipboard?.writeText(text).then(
+        () => DBG.push('info', 'log copied to clipboard'),
+        () => DBG.push('warn', 'clipboard unavailable')
+      );
+    });
+  }
+
+  // Stats render runs on a slow interval, only when panel is open
+  function renderStats() {
+    if (!DBG.enabled) return;
+    const g = window.__game;
+    const set = (id, v, cls) => {
+      const el = document.getElementById(id);
+      if (el) { el.textContent = v; el.className = 'v' + (cls ? ' ' + cls : ''); }
+    };
+    set('dbg-boot', DBG.bootSteps.length ? `${DBG.bootSteps.filter(s=>s.ok).length}/${DBG.bootSteps.length} steps ok` : '—');
+    set('dbg-loop', g ? `frame #${g.frameCount} dt=${(g.lastDt*1000).toFixed(1)}ms` : 'not running');
+    set('dbg-fps', DBG.fps.value.toFixed(0));
+    set('dbg-view', `${Math.round(g?.viewW || 0)}×${Math.round(g?.viewH || 0)} dpr=${(g?.dpr || 0).toFixed(2)}`);
+    if (g && g.state) {
+      const s = g.state.ship;
+      set('dbg-ship', `(${Math.round(s.x)}, ${Math.round(s.y)}) v=${Math.hypot(s.vx,s.vy).toFixed(1)} h=${(s.heading*180/Math.PI).toFixed(0)}°`);
+      set('dbg-cam', `(${Math.round(g.camera.x)}, ${Math.round(g.camera.y)})`);
+      set('dbg-target', g.state.target ? `(${Math.round(g.state.target.x)}, ${Math.round(g.state.target.y)})${g.state.target.name ? ' '+g.state.target.name : ''}` : 'none');
+      set('dbg-reveals', String(g.state.reveals.length));
+    }
+    set('dbg-errors', String(DBG.errors), DBG.errors ? 'err' : '');
+  }
+  setInterval(renderStats, 250);
+
+  // FPS counter (runs always so we have data even before panel opens)
+  function tickFPS() {
+    DBG.fps.frames++;
+    const now = performance.now();
+    const dt = now - DBG.fps.last;
+    if (dt >= 500) {
+      DBG.fps.value = (DBG.fps.frames * 1000) / dt;
+      DBG.fps.last = now; DBG.fps.frames = 0;
+    }
+    requestAnimationFrame(tickFPS);
+  }
+  requestAnimationFrame(tickFPS);
+
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', wireDebugUI);
+  } else {
+    wireDebugUI();
+  }
+
+  DBG.push('info', 'debug subsystem ready');
+})();
+</script>
+<script>
+/* =========================================================
+   SKYBOUND — free-form 2D flight POC
+   Plain canvas. No deps. Mobile-first vertical layout.
+   ========================================================= */
+
+(() => {
+  const canvas = document.getElementById('world');
+  const ctx = canvas.getContext('2d');
+
+  // ----- Seeded RNG (mulberry32) so a seed -> same map -----
+  function rng(seed) {
+    let a = seed >>> 0;
+    return function() {
+      a |= 0; a = a + 0x6D2B79F5 | 0;
+      let t = Math.imul(a ^ a >>> 15, 1 | a);
+      t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t;
+      return ((t ^ t >>> 14) >>> 0) / 4294967296;
+    };
+  }
+
+  // ----- World config -----
+  const WORLD = { w: 3200, h: 3200 };  // big enough to feel exploratory
+  const ISLAND_COUNT = 22;
+  const MIN_ISLAND_DIST = 380;
+  const REVEAL_RADIUS = 220;
+  const DISCOVERY_RADIUS = 140; // when an island is "discovered" by name
+  const SHIP_MAX_SPEED = 110;   // px / sec
+  const SHIP_ACCEL = 60;        // px / sec^2
+  const SHIP_DRAG = 0.6;        // per sec when not thrusting
+  const SHIP_TURN_RATE = 1.4;   // rad / sec
+
+  // ----- Island name fragments -----
+  const NAME_PREFIX = ['Tor','Vel','Cael','Mor','Brin','Sol','Nyx','Aer','Dun','Wyn','Pyre','Hesp','Cira','Mel','Os'];
+  const NAME_SUFFIX = ['mara','heim','arden','wyck','antia','foss','vale','reach','spire','holm','aris','marin','nys','dell'];
+
+  // ----- State -----
+  let state = null;
+
+  function loadOrCreateState() {
+    const saved = localStorage.getItem('skybound-poc-v1');
+    if (saved) {
+      try { return JSON.parse(saved); } catch(e) {}
+    }
+    return newState();
+  }
+
+  function newState() {
+    const seed = (Math.random() * 1e9) | 0;
+    const r = rng(seed);
+
+    // Place islands with min-distance rejection
+    const islands = [];
+    let attempts = 0;
+    while (islands.length < ISLAND_COUNT && attempts < 3000) {
+      attempts++;
+      const x = 200 + r() * (WORLD.w - 400);
+      const y = 200 + r() * (WORLD.h - 400);
+      let ok = true;
+      for (const i of islands) {
+        const dx = i.x - x, dy = i.y - y;
+        if (dx*dx + dy*dy < MIN_ISLAND_DIST * MIN_ISLAND_DIST) { ok = false; break; }
+      }
+      if (ok) {
+        islands.push({
+          x, y,
+          radius: 28 + r() * 22,
+          name: NAME_PREFIX[(r()*NAME_PREFIX.length)|0] + NAME_SUFFIX[(r()*NAME_SUFFIX.length)|0],
+          shape: Math.floor(r() * 1000), // seed for blob shape
+          discovered: false
+        });
+      }
+    }
+
+    // Spawn ship at first island
+    const start = islands[0];
+
+    return {
+      seed,
+      islands,
+      ship: {
+        x: start.x + 60, y: start.y + 60,
+        vx: 0, vy: 0,
+        heading: -Math.PI / 4, // facing up-right
+      },
+      target: null, // {x, y}
+      // reveal stamps: list of {x,y} centers; we re-bake fog from these
+      reveals: [{ x: start.x + 60, y: start.y + 60 }]
+    };
+  }
+
+  function saveState() {
+    // strip ship velocity (recomputed) but keep position/heading
+    const s = {
+      seed: state.seed,
+      islands: state.islands.map(i => ({
+        x: i.x, y: i.y, radius: i.radius, name: i.name,
+        shape: i.shape, discovered: i.discovered
+      })),
+      ship: { x: state.ship.x, y: state.ship.y, vx: 0, vy: 0, heading: state.ship.heading },
+      target: state.target,
+      reveals: state.reveals
+    };
+    try { localStorage.setItem('skybound-poc-v1', JSON.stringify(s)); } catch(e) {}
+  }
+
+  // ----- Fog mask (offscreen canvas, world-sized) -----
+  // We keep one offscreen canvas at a downscaled resolution for perf,
+  // start fully opaque, and "erase" circles for reveals.
+  const FOG_SCALE = 0.25; // mask is 25% of world resolution
+  const fogCanvas = document.createElement('canvas');
+  fogCanvas.width = Math.floor(WORLD.w * FOG_SCALE);
+  fogCanvas.height = Math.floor(WORLD.h * FOG_SCALE);
+  const fogCtx = fogCanvas.getContext('2d');
+
+  function bakeFog() {
+    // Fully opaque dark fog
+    fogCtx.globalCompositeOperation = 'source-over';
+    fogCtx.fillStyle = 'rgba(18, 26, 38, 0.92)';
+    fogCtx.fillRect(0, 0, fogCanvas.width, fogCanvas.height);
+    // Erase reveal circles with soft edge
+    fogCtx.globalCompositeOperation = 'destination-out';
+    for (const r of state.reveals) {
+      const x = r.x * FOG_SCALE, y = r.y * FOG_SCALE;
+      const rad = REVEAL_RADIUS * FOG_SCALE;
+      const g = fogCtx.createRadialGradient(x, y, rad * 0.3, x, y, rad);
+      g.addColorStop(0, 'rgba(0,0,0,1)');
+      g.addColorStop(0.7, 'rgba(0,0,0,0.85)');
+      g.addColorStop(1, 'rgba(0,0,0,0)');
+      fogCtx.fillStyle = g;
+      fogCtx.beginPath();
+      fogCtx.arc(x, y, rad, 0, Math.PI * 2);
+      fogCtx.fill();
+    }
+    fogCtx.globalCompositeOperation = 'source-over';
+  }
+
+  // Stamp a single new reveal incrementally (cheaper than rebaking)
+  function stampReveal(wx, wy) {
+    state.reveals.push({ x: wx, y: wy });
+    const x = wx * FOG_SCALE, y = wy * FOG_SCALE;
+    const rad = REVEAL_RADIUS * FOG_SCALE;
+    fogCtx.globalCompositeOperation = 'destination-out';
+    const g = fogCtx.createRadialGradient(x, y, rad * 0.3, x, y, rad);
+    g.addColorStop(0, 'rgba(0,0,0,1)');
+    g.addColorStop(0.7, 'rgba(0,0,0,0.85)');
+    g.addColorStop(1, 'rgba(0,0,0,0)');
+    fogCtx.fillStyle = g;
+    fogCtx.beginPath();
+    fogCtx.arc(x, y, rad, 0, Math.PI * 2);
+    fogCtx.fill();
+    fogCtx.globalCompositeOperation = 'source-over';
+  }
+
+  // ----- Camera -----
+  const camera = { x: 0, y: 0, smoothing: 4 };
+
+  // ----- Canvas sizing -----
+  let viewW = 0, viewH = 0, dpr = 1;
+  function resize() {
+    dpr = Math.min(window.devicePixelRatio || 1, 2);
+    const rect = canvas.getBoundingClientRect();
+    viewW = rect.width; viewH = rect.height;
+    canvas.width = Math.floor(viewW * dpr);
+    canvas.height = Math.floor(viewH * dpr);
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  }
+  window.addEventListener('resize', resize);
+
+  // ----- Input -----
+  function screenToWorld(sx, sy) {
+    return {
+      x: sx - viewW / 2 + camera.x,
+      y: sy - viewH / 2 + camera.y
+    };
+  }
+
+  function onTap(clientX, clientY) {
+    const rect = canvas.getBoundingClientRect();
+    const sx = clientX - rect.left;
+    const sy = clientY - rect.top;
+    const w = screenToWorld(sx, sy);
+    // Check if tap is on a discovered island -> target its center
+    let pickedIsland = null;
+    for (const i of state.islands) {
+      if (!i.discovered) continue;
+      const dx = i.x - w.x, dy = i.y - w.y;
+      if (dx*dx + dy*dy < (i.radius + 18) * (i.radius + 18)) {
+        pickedIsland = i; break;
+      }
+    }
+    if (pickedIsland) {
+      state.target = { x: pickedIsland.x, y: pickedIsland.y, name: pickedIsland.name };
+    } else {
+      state.target = { x: w.x, y: w.y, name: null };
+    }
+  }
+
+  canvas.addEventListener('pointerdown', e => {
+    e.preventDefault();
+    onTap(e.clientX, e.clientY);
+    window.__DBG?.push('info', `tap (${Math.round(e.clientX)}, ${Math.round(e.clientY)})${state.target ? ' → target set' : ''}`);
+  });
+
+  // ----- Update -----
+  function angleDiff(a, b) {
+    let d = b - a;
+    while (d > Math.PI) d -= Math.PI * 2;
+    while (d < -Math.PI) d += Math.PI * 2;
+    return d;
+  }
+
+  let lastRevealX = -1e9, lastRevealY = -1e9;
+  const REVEAL_STEP = 80; // stamp every N px traveled
+
+  function update(dt) {
+    const ship = state.ship;
+
+    if (state.target) {
+      const dx = state.target.x - ship.x;
+      const dy = state.target.y - ship.y;
+      const dist = Math.hypot(dx, dy);
+      const desired = Math.atan2(dy, dx);
+      const diff = angleDiff(ship.heading, desired);
+
+      // Turn toward target. Slightly faster turn when going slow so the ship
+      // can fix its heading without fighting inertia.
+      const speed = Math.hypot(ship.vx, ship.vy);
+      const turnBoost = 1 + (1 - Math.min(speed / SHIP_MAX_SPEED, 1)) * 0.5;
+      const maxTurn = SHIP_TURN_RATE * turnBoost * dt;
+      const turn = Math.sign(diff) * Math.min(Math.abs(diff), maxTurn);
+      ship.heading += turn;
+
+      // Compute braking distance: how far we'd travel decelerating from current
+      // speed at SHIP_ACCEL. v^2 = u^2 + 2*a*s  -->  s = u^2 / (2*a)
+      const brakeDist = (speed * speed) / (2 * SHIP_ACCEL) + 20; // +20 = safety margin
+
+      // Project current velocity onto the direction-to-target; this tells us
+      // how much of our motion is actually useful.
+      const dirX = dist > 0.01 ? dx / dist : Math.cos(ship.heading);
+      const dirY = dist > 0.01 ? dy / dist : Math.sin(ship.heading);
+      const velAlongTarget = ship.vx * dirX + ship.vy * dirY;
+
+      const facingFactor = Math.max(0, Math.cos(diff)); // 1 aligned, 0 perpendicular
+
+      let ax = 0, ay = 0;
+      if (dist > brakeDist) {
+        // Cruise: thrust forward along heading, scaled by how well we're facing
+        ax = Math.cos(ship.heading) * SHIP_ACCEL * facingFactor;
+        ay = Math.sin(ship.heading) * SHIP_ACCEL * facingFactor;
+      } else {
+        // Brake: apply force opposing velocity (anti-thrust). Ease off when very
+        // close so the ship doesn't fully stall a few px short of the target.
+        if (speed > 1) {
+          const brakeStrength = Math.min(1.2, dist / 30); // ramp down inside 30px
+          ax = -(ship.vx / speed) * SHIP_ACCEL * brakeStrength;
+          ay = -(ship.vy / speed) * SHIP_ACCEL * brakeStrength;
+        }
+        // Tiny "creep" thrust toward target when very close and slow — covers
+        // the last few pixels so we actually arrive.
+        if (dist < 40 && speed < 20) {
+          ax += dirX * SHIP_ACCEL * 0.4;
+          ay += dirY * SHIP_ACCEL * 0.4;
+        }
+      }
+
+      // Apply lateral damping always when targeting — kills sideways drift
+      const lateralX = ship.vx - velAlongTarget * dirX;
+      const lateralY = ship.vy - velAlongTarget * dirY;
+      ax -= lateralX * 1.5;
+      ay -= lateralY * 1.5;
+
+      ship.vx += ax * dt;
+      ship.vy += ay * dt;
+
+      // Arrival: close enough and slow enough
+      if (dist < 22 && speed < 25) {
+        state.target = null;
+        ship.vx *= 0.3;
+        ship.vy *= 0.3;
+      }
+    } else {
+      // Drift: exponential decay
+      const decay = Math.exp(-SHIP_DRAG * dt);
+      ship.vx *= decay;
+      ship.vy *= decay;
+    }
+
+    // Clamp speed
+    const sp = Math.hypot(ship.vx, ship.vy);
+    if (sp > SHIP_MAX_SPEED) {
+      ship.vx = ship.vx / sp * SHIP_MAX_SPEED;
+      ship.vy = ship.vy / sp * SHIP_MAX_SPEED;
+    }
+
+    // Move
+    ship.x += ship.vx * dt;
+    ship.y += ship.vy * dt;
+
+    // Bounds (soft clamp)
+    ship.x = Math.max(40, Math.min(WORLD.w - 40, ship.x));
+    ship.y = Math.max(40, Math.min(WORLD.h - 40, ship.y));
+
+    // Reveal stamps along path
+    const ddx = ship.x - lastRevealX, ddy = ship.y - lastRevealY;
+    if (ddx*ddx + ddy*ddy > REVEAL_STEP * REVEAL_STEP) {
+      stampReveal(ship.x, ship.y);
+      lastRevealX = ship.x; lastRevealY = ship.y;
+    }
+
+    // Island discovery
+    for (const i of state.islands) {
+      if (i.discovered) continue;
+      const d = Math.hypot(i.x - ship.x, i.y - ship.y);
+      if (d < DISCOVERY_RADIUS) {
+        i.discovered = true;
+        window.__DBG?.push('ok', 'discovered ' + i.name);
+      }
+    }
+
+    // Camera follow with smoothing
+    const camTargetX = ship.x;
+    const camTargetY = ship.y;
+    const k = 1 - Math.exp(-camera.smoothing * dt);
+    camera.x += (camTargetX - camera.x) * k;
+    camera.y += (camTargetY - camera.y) * k;
+  }
+
+  // ----- Render -----
+  function drawBackground() {
+    // Cloud-like noise pattern in world space (very cheap: a few radial gradients)
+    // Done in screen space tied to camera for parallax illusion.
+    const t = performance.now() * 0.00003;
+    for (let i = 0; i < 6; i++) {
+      const px = (i * 480 + Math.sin(t + i) * 80) - camera.x * 0.3;
+      const py = (i * 333 + Math.cos(t + i * 0.7) * 60) - camera.y * 0.3;
+      const sx = ((px % (viewW + 400)) + (viewW + 400)) % (viewW + 400) - 200;
+      const sy = ((py % (viewH + 400)) + (viewH + 400)) % (viewH + 400) - 200;
+      const grad = ctx.createRadialGradient(sx, sy, 0, sx, sy, 260);
+      grad.addColorStop(0, 'rgba(245, 230, 200, 0.10)');
+      grad.addColorStop(1, 'rgba(245, 230, 200, 0)');
+      ctx.fillStyle = grad;
+      ctx.fillRect(sx - 260, sy - 260, 520, 520);
+    }
+  }
+
+  // Pseudo-organic island shape, deterministic by island.shape
+  function drawIsland(i, cx, cy) {
+    const r = rng(i.shape + 1);
+    const points = 14;
+    const verts = [];
+    for (let k = 0; k < points; k++) {
+      const ang = (k / points) * Math.PI * 2;
+      const wobble = 0.75 + r() * 0.45;
+      verts.push({
+        x: cx + Math.cos(ang) * i.radius * wobble,
+        y: cy + Math.sin(ang) * i.radius * wobble
+      });
+    }
+    // Shadow / underside
+    ctx.beginPath();
+    for (let k = 0; k < verts.length; k++) {
+      const v = verts[k];
+      if (k === 0) ctx.moveTo(v.x, v.y + 8);
+      else ctx.lineTo(v.x, v.y + 8);
+    }
+    ctx.closePath();
+    ctx.fillStyle = 'rgba(20, 30, 40, 0.4)';
+    ctx.fill();
+
+    // Body
+    ctx.beginPath();
+    for (let k = 0; k < verts.length; k++) {
+      const v = verts[k];
+      if (k === 0) ctx.moveTo(v.x, v.y);
+      else ctx.lineTo(v.x, v.y);
+    }
+    ctx.closePath();
+    const grad = ctx.createLinearGradient(cx, cy - i.radius, cx, cy + i.radius);
+    grad.addColorStop(0, '#6b8a5a');
+    grad.addColorStop(0.55, '#4d6a40');
+    grad.addColorStop(1, '#3a4a2e');
+    ctx.fillStyle = grad;
+    ctx.fill();
+    ctx.strokeStyle = 'rgba(20, 25, 15, 0.7)';
+    ctx.lineWidth = 1.5;
+    ctx.stroke();
+
+    // Tiny highlight (a "peak")
+    ctx.beginPath();
+    ctx.arc(cx - i.radius * 0.2, cy - i.radius * 0.2, i.radius * 0.18, 0, Math.PI * 2);
+    ctx.fillStyle = 'rgba(220, 210, 160, 0.5)';
+    ctx.fill();
+
+    // Name plate if discovered
+    if (i.discovered) {
+      const label = i.name;
+      ctx.font = "italic 13px Georgia, serif";
+      const w = ctx.measureText(label).width;
+      const lx = cx - w / 2 - 6;
+      const ly = cy + i.radius + 6;
+      ctx.fillStyle = 'rgba(232, 220, 192, 0.92)';
+      ctx.fillRect(lx, ly, w + 12, 18);
+      ctx.strokeStyle = 'rgba(42, 36, 23, 0.8)';
+      ctx.lineWidth = 1;
+      ctx.strokeRect(lx, ly, w + 12, 18);
+      ctx.fillStyle = '#2a2417';
+      ctx.fillText(label, cx - w / 2, ly + 13);
+    }
+  }
+
+  function drawShip(cx, cy, heading) {
+    ctx.save();
+    ctx.translate(cx, cy);
+    ctx.rotate(heading);
+
+    // Wake / motion trail
+    const speed = Math.hypot(state.ship.vx, state.ship.vy);
+    if (speed > 5) {
+      const trailLen = 18 + speed * 0.15;
+      const trail = ctx.createLinearGradient(-trailLen, 0, 0, 0);
+      trail.addColorStop(0, 'rgba(232, 220, 192, 0)');
+      trail.addColorStop(1, 'rgba(232, 220, 192, 0.35)');
+      ctx.fillStyle = trail;
+      ctx.beginPath();
+      ctx.moveTo(-trailLen, -3);
+      ctx.lineTo(0, -2);
+      ctx.lineTo(0, 2);
+      ctx.lineTo(-trailLen, 3);
+      ctx.closePath();
+      ctx.fill();
+    }
+
+    // Hull
+    ctx.beginPath();
+    ctx.moveTo(14, 0);
+    ctx.lineTo(-8, -7);
+    ctx.lineTo(-5, 0);
+    ctx.lineTo(-8, 7);
+    ctx.closePath();
+    ctx.fillStyle = '#c9622e';
+    ctx.fill();
+    ctx.strokeStyle = '#2a2417';
+    ctx.lineWidth = 1.2;
+    ctx.stroke();
+
+    // Sail
+    ctx.beginPath();
+    ctx.moveTo(2, 0);
+    ctx.lineTo(-4, -9);
+    ctx.lineTo(-2, 0);
+    ctx.closePath();
+    ctx.fillStyle = '#f2e8d0';
+    ctx.fill();
+    ctx.stroke();
+
+    ctx.restore();
+  }
+
+  function drawTargetMarker() {
+    if (!state.target) return;
+    const sx = state.target.x - camera.x + viewW / 2;
+    const sy = state.target.y - camera.y + viewH / 2;
+    const t = performance.now() * 0.003;
+    const pulse = 12 + Math.sin(t) * 3;
+    ctx.strokeStyle = 'rgba(201, 98, 46, 0.85)';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.arc(sx, sy, pulse, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.moveTo(sx - 18, sy); ctx.lineTo(sx - 8, sy);
+    ctx.moveTo(sx + 8, sy); ctx.lineTo(sx + 18, sy);
+    ctx.moveTo(sx, sy - 18); ctx.lineTo(sx, sy - 8);
+    ctx.moveTo(sx, sy + 8); ctx.lineTo(sx, sy + 18);
+    ctx.stroke();
+  }
+
+  function render() {
+    // Clear
+    ctx.fillStyle = '#1a2330';
+    ctx.fillRect(0, 0, viewW, viewH);
+
+    drawBackground();
+
+    // World transform: translate so camera is at center of view
+    ctx.save();
+    ctx.translate(viewW / 2 - camera.x, viewH / 2 - camera.y);
+
+    // Islands
+    for (const i of state.islands) {
+      // Cull
+      const screenX = i.x - camera.x + viewW / 2;
+      const screenY = i.y - camera.y + viewH / 2;
+      if (screenX < -100 || screenX > viewW + 100) continue;
+      if (screenY < -100 || screenY > viewH + 100) continue;
+      drawIsland(i, i.x, i.y);
+    }
+
+    // Ship
+    drawShip(state.ship.x, state.ship.y, state.ship.heading);
+
+    ctx.restore();
+
+    // Fog overlay — drawn in screen space, sourced from world-space mask
+    // Clamp source rect to fog canvas bounds, then position destination accordingly,
+    // so we don't trigger IndexSizeError near the map edges.
+    const fw = fogCanvas.width, fh = fogCanvas.height;
+    let srcX = (camera.x - viewW / 2) * FOG_SCALE;
+    let srcY = (camera.y - viewH / 2) * FOG_SCALE;
+    let srcW = viewW * FOG_SCALE;
+    let srcH = viewH * FOG_SCALE;
+    let dstX = 0, dstY = 0, dstW = viewW, dstH = viewH;
+    const pxPerSrc = viewW / srcW; // = 1/FOG_SCALE
+
+    if (srcX < 0) { dstX = -srcX * pxPerSrc; dstW += srcX * pxPerSrc; srcW += srcX; srcX = 0; }
+    if (srcY < 0) { dstY = -srcY * pxPerSrc; dstH += srcY * pxPerSrc; srcH += srcY; srcY = 0; }
+    if (srcX + srcW > fw) { const over = srcX + srcW - fw; srcW -= over; dstW -= over * pxPerSrc; }
+    if (srcY + srcH > fh) { const over = srcY + srcH - fh; srcH -= over; dstH -= over * pxPerSrc; }
+
+    if (srcW > 0 && srcH > 0) {
+      try { ctx.drawImage(fogCanvas, srcX, srcY, srcW, srcH, dstX, dstY, dstW, dstH); }
+      catch (e) { /* swallow rather than kill the loop */ }
+    }
+
+    // Target marker on top of fog (so you can see it through fog faintly)
+    drawTargetMarker();
+
+    // Edge vignette
+    const vg = ctx.createRadialGradient(viewW/2, viewH/2, Math.min(viewW,viewH)*0.4, viewW/2, viewH/2, Math.max(viewW,viewH)*0.75);
+    vg.addColorStop(0, 'rgba(0,0,0,0)');
+    vg.addColorStop(1, 'rgba(10,15,25,0.55)');
+    ctx.fillStyle = vg;
+    ctx.fillRect(0, 0, viewW, viewH);
+  }
+
+  // ----- HUD updates -----
+  const headingEl = document.getElementById('heading-val');
+  const destEl = document.getElementById('destination-name');
+  const distEl = document.getElementById('distance-val');
+  const countEl = document.getElementById('discovered-count');
+  const needleEl = document.getElementById('needle');
+
+  function compassDir(rad) {
+    // rad: 0 = east. Convert to compass with N at top.
+    let deg = rad * 180 / Math.PI;
+    deg = (deg + 90 + 360) % 360; // 0 = N now
+    const dirs = ['N','NE','E','SE','S','SW','W','NW'];
+    return dirs[Math.round(deg / 45) % 8] + ' ' + Math.round(deg) + '°';
+  }
+
+  function updateHUD() {
+    headingEl.textContent = compassDir(state.ship.heading);
+    // needle points opposite of heading (needle = north relative to ship facing)
+    const deg = state.ship.heading * 180 / Math.PI + 90;
+    needleEl.style.transform = `translate(-50%, -100%) rotate(${-deg}deg)`;
+
+    if (state.target) {
+      const d = Math.hypot(state.target.x - state.ship.x, state.target.y - state.ship.y);
+      destEl.textContent = state.target.name || 'Open sky';
+      distEl.textContent = Math.round(d) + ' lg';
+    } else {
+      destEl.textContent = 'Adrift';
+      distEl.textContent = '—';
+    }
+    const disc = state.islands.filter(i => i.discovered).length;
+    countEl.textContent = `${disc} / ${state.islands.length} isles`;
+  }
+
+  // ----- Loop -----
+  let lastT = performance.now();
+  let saveAccum = 0;
+  let frameErrCount = 0;
+  let frameCount = 0;
+  let lastDt = 0;
+  function loop(now) {
+    frameCount++;
+    try {
+      let dt = (now - lastT) / 1000;
+      if (dt > 0.1) dt = 0.1;
+      lastDt = dt;
+      lastT = now;
+      update(dt);
+      render();
+      updateHUD();
+      saveAccum += dt;
+      if (saveAccum > 1.5) { saveState(); saveAccum = 0; }
+    } catch (e) {
+      frameErrCount++;
+      if (frameErrCount <= 5 && window.__DBG) {
+        window.__DBG.push('err', `frame ${frameCount}: ${e.message || e}`);
+      }
+    }
+    requestAnimationFrame(loop);
+  }
+
+  // ----- Boot -----
+  function boot() {
+    const DBG = window.__DBG;
+    try {
+      DBG?.boot('canvas element', !!canvas);
+      DBG?.boot('2d context', !!ctx);
+      resize();
+      DBG?.boot('resize', true, `${viewW}×${viewH} @${dpr}x`);
+      state = loadOrCreateState();
+      DBG?.boot('state loaded', true, `${state.islands.length} islands, seed ${state.seed}`);
+      camera.x = state.ship.x;
+      camera.y = state.ship.y;
+      lastRevealX = state.ship.x; lastRevealY = state.ship.y;
+      bakeFog();
+      DBG?.boot('fog baked', true, `${state.reveals.length} reveals, mask ${fogCanvas.width}×${fogCanvas.height}`);
+
+      // Expose to debug subsystem
+      window.__game = {
+        get state() { return state; },
+        get camera() { return camera; },
+        get frameCount() { return frameCount; },
+        get lastDt() { return lastDt; },
+        get viewW() { return viewW; },
+        get viewH() { return viewH; },
+        get dpr() { return dpr; },
+        teleportRandom() {
+          const r = rng((Math.random() * 1e9) | 0);
+          state.ship.x = 200 + r() * (WORLD.w - 400);
+          state.ship.y = 200 + r() * (WORLD.h - 400);
+          state.ship.vx = 0; state.ship.vy = 0;
+          camera.x = state.ship.x; camera.y = state.ship.y;
+          state.target = null;
+          DBG?.push('info', `teleported to (${Math.round(state.ship.x)}, ${Math.round(state.ship.y)})`);
+        },
+        revealAll() {
+          for (const isl of state.islands) isl.discovered = true;
+          // Stamp reveals on a grid covering the whole world
+          for (let x = 0; x < WORLD.w; x += REVEAL_RADIUS) {
+            for (let y = 0; y < WORLD.h; y += REVEAL_RADIUS) {
+              state.reveals.push({ x, y });
+            }
+          }
+          bakeFog();
+          DBG?.push('info', `revealed all (${state.reveals.length} stamps)`);
+        }
+      };
+
+      requestAnimationFrame(loop);
+      DBG?.boot('loop started', true);
+    } catch (e) {
+      DBG?.boot('boot failed', false, e.message || String(e));
+      throw e;
+    }
+  }
+
+  function dismissIntro(via) {
+    const intro = document.getElementById('intro');
+    if (intro && !intro.classList.contains('gone')) {
+      intro.classList.add('gone');
+      window.__DBG?.push('info', 'intro dismissed via ' + via);
+    }
+  }
+  const beginBtnEl = document.getElementById('begin');
+  if (beginBtnEl) {
+    // Log every event type so we can see what actually fires in WKWebView
+    ['touchstart','touchend','pointerdown','pointerup','mousedown','mouseup','click'].forEach(t => {
+      beginBtnEl.addEventListener(t, (e) => {
+        window.__DBG?.push('info', 'btn:' + t);
+        // Any of these is good enough to dismiss; first wins, others are idempotent
+        if (t === 'touchend' || t === 'click' || t === 'pointerup') {
+          dismissIntro(t);
+        }
+      }, { passive: t === 'touchstart' ? true : false });
+    });
+    // Also make the whole intro card tappable as a fallback
+    const introCard = document.getElementById('intro-card');
+    introCard?.addEventListener('click', (e) => {
+      // Only if tap was at the bottom (where the button is)
+      const rect = introCard.getBoundingClientRect();
+      if (e.clientY > rect.bottom - 80) dismissIntro('card-fallback');
+    });
+    window.__DBG?.boot('begin button wired', true);
+  } else {
+    window.__DBG?.boot('begin button wired', false, '#begin not found');
+  }
+
+  const resetBtn = document.getElementById('reset-btn');
+  if (resetBtn) {
+    resetBtn.addEventListener('click', () => {
+      localStorage.removeItem('skybound-poc-v1');
+      state = newState();
+      camera.x = state.ship.x;
+      camera.y = state.ship.y;
+      lastRevealX = state.ship.x; lastRevealY = state.ship.y;
+      bakeFog();
+      window.__DBG?.push('info', 'new voyage');
+    });
+  }
+
+  boot();
+})();
+</script>
+</body>
+</html>
