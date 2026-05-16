@@ -71,6 +71,7 @@ iOS-specific issues require live testing in the Claude app's web viewer; the on-
 - Audio: ambient wind, soft thump on arrival, faint click on tap
 - Camera lead — offset ahead of the ship in its travel direction so you see more of where you're going
 - Smoothed compass needle (currently snaps slightly)
+- **Wind serpent turn animation**: current bunch-and-extend is functional but the coil reads as "shrink then grow", not as a creature really coiling on itself. Worth more iteration in `ship-lab.html` — try variants like spiraling segments tightening around the head (helical), or segments piling on each other (recoiling spring), or the head dipping down + tail flicking up through the turn. Per-card Turn button is already in the lab to make this easy.
 
 ### World content
 - Varied island appearance: size tiers, shape archetypes, biome tints

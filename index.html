@@ -625,8 +625,7 @@
 
     if (menuItem) menuItem.addEventListener('click', () => setEnabled(!DBG.enabled));
     if (pill) pill.addEventListener('click', () => setEnabled(true));
-    const closeBtn = document.getElementById('dbg-close');
-    if (closeBtn) closeBtn.addEventListener('click', () => setEnabled(false));
+    document.getElementById('dbg-close')?.addEventListener('click', () => setEnabled(false));
 
     // Triple-tap anywhere on the top edge as a backup discovery gesture
     let taps = []; const TAP_WIN = 600;
@@ -1733,6 +1732,9 @@
     manta: 'topdown', jellyfish: 'topdown',
     wyvern: 'profile', cloudGalleon: 'profile', windSerpent: 'profile',
   };
+  // Profile ships that animate their own facing transition (instead of an
+  // instant flip-x in the dispatcher). They receive facingLeft as the 4th arg.
+  const SHIP_OWN_FACING = { windSerpent: true };
 
   // Update profile-ship facing with hysteresis so head-on north/south travel
   // doesn't cause a flip flicker.
@@ -1773,12 +1775,13 @@
       updateShipFacing(heading);
       const bob = Math.sin(t * 1.3) * 0.9;
       ctx.translate(0, bob);
-      if (state.ship.facingLeft) ctx.scale(-1, 1);
+      // Ships that animate their own facing skip the dispatcher's flip.
+      if (state.ship.facingLeft && !SHIP_OWN_FACING[state.shipType]) ctx.scale(-1, 1);
     }
 
     const drawer = SHIP_DRAWERS[state.shipType] || SHIP_DRAWERS.sloop;
     const t0 = performance.now();
-    drawer(ctx, t, speed01);
+    drawer(ctx, t, speed01, state.ship.facingLeft);
     const dt = performance.now() - t0;
     recordShipRenderTime(dt);
 
@@ -2095,18 +2098,70 @@
     ctx.fillStyle = 'rgba(255, 255, 255, 0.55)'; ctx.fill();
   }
 
-  function drawShipWindSerpent(ctx, t, speed) {
-    // Profile view: head + winglets in front, segmented body curling behind.
+  // Per-canvas animation state for the wind serpent. WeakMap so the game's
+  // main canvas and each hangar preview canvas keep independent state.
+  const wsStateMap = new WeakMap();
+
+  function drawShipWindSerpent(ctx, t, speed, facingLeft = false) {
+    // Profile view. Turning is animated as: bunch up onto the head,
+    // invisibly flip facing while bunched, then extend out in the new
+    // direction. Preserves "up" (horn + eye stay on top) throughout.
     const segs = 7;
     const segLen = 4.2;
     const amp = 3.2;
+    const target = facingLeft ? Math.PI : 0;
+
+    let st = wsStateMap.get(ctx);
+    if (!st) {
+      st = { facing: target, bunch: 0, lastT: t };
+      wsStateMap.set(ctx, st);
+    }
+    const dt = Math.min(0.1, Math.max(0, t - st.lastT));
+    st.lastT = t;
+
+    // Animation: target reached when bunch goes 0 → 1 → 0.
+    // bunchRate = 2.0 → ~0.5s bunch + ~0.5s extend = ~1.0s total turn.
+    const bunchRate = 2.0;
+    if (st.facing !== target) {
+      st.bunch += bunchRate * dt;
+      if (st.bunch >= 1) { st.bunch = 1; st.facing = target; }
+    } else if (st.bunch > 0) {
+      st.bunch -= bunchRate * dt;
+      if (st.bunch < 0) st.bunch = 0;
+    }
+
+    const bunch = st.bunch;
+    const facing = st.facing;           // 0 (right) or π (left), no in-between
+    const trailAng = facing + Math.PI;  // body extends opposite of facing
+
+    // While bunching, segment length shrinks and wiggle dampens. A small
+    // per-segment coil rotation makes the body curl as it compresses.
+    const effSegLen = segLen * (1 - bunch * 0.92);
+    const effAmp = amp * (1 - bunch * 0.6);
+    const coilAmount = bunch * Math.PI * 0.5;
+    const coilSign = facing === 0 ? -1 : 1;
+
+    const wigRate = 2.6 + speed * 1;
     const points = [];
+    let x = 0, y = 0;
     for (let i = 0; i < segs; i++) {
       const along = i / (segs - 1);
-      const x = 12 - i * segLen;
-      const y = Math.sin(t * (2.6 + speed * 1) - i * 0.9) * amp * along;
-      points.push({ x, y, r: 4.6 - along * 3.6 });
+      const segTrail = trailAng + coilSign * coilAmount * along;
+      const wig = Math.sin(t * wigRate - i * 0.9) * effAmp * along;
+      const perpX = -Math.sin(segTrail);
+      const perpY =  Math.cos(segTrail);
+      points.push({ x: x + perpX * wig, y: y + perpY * wig, r: 4.6 - along * 3.6 });
+      x += effSegLen * Math.cos(segTrail);
+      y += effSegLen * Math.sin(segTrail);
     }
+
+    // Center on COM so the head doesn't drift relative to the camera.
+    let cmx = 0, cmy = 0;
+    for (const p of points) { cmx += p.x; cmy += p.y; }
+    cmx /= segs; cmy /= segs;
+    for (const p of points) { p.x -= cmx; p.y -= cmy; }
+
+    // Body — tail first so head draws on top.
     ctx.strokeStyle = '#2a2417'; ctx.lineWidth = 0.8;
     for (let i = segs - 1; i >= 1; i--) {
       const p = points[i];
@@ -2115,13 +2170,13 @@
       ctx.fillStyle = '#8a4eb0'; ctx.fill();
       ctx.stroke();
     }
+
+    // Head + winglets — flipped along x for left-facing, never rotated, so
+    // the horn and eye stay on top.
     const head = points[0];
-    const next = points[1];
-    const headAng = Math.atan2(head.y - next.y, head.x - next.x);
     ctx.save();
     ctx.translate(head.x, head.y);
-    ctx.rotate(headAng);
-    // Winglets
+    if (facing === Math.PI) ctx.scale(-1, 1);
     const wingFlap = Math.sin(t * (5.5 + speed * 1.5)) * 0.45;
     for (const side of [-1, 1]) {
       ctx.save();
@@ -2135,7 +2190,6 @@
       ctx.fillStyle = '#b07cd0'; ctx.fill(); ctx.stroke();
       ctx.restore();
     }
-    // Head
     ctx.beginPath();
     ctx.moveTo(5, 0);
     ctx.quadraticCurveTo(3, -4, -3, -3);
@@ -2143,12 +2197,10 @@
     ctx.quadraticCurveTo(3, 4, 5, 0);
     ctx.closePath();
     ctx.fillStyle = '#8a4eb0'; ctx.fill(); ctx.stroke();
-    // Horn
     ctx.beginPath();
     ctx.moveTo(-1, -3); ctx.lineTo(-3, -6); ctx.lineTo(0, -4);
     ctx.closePath();
     ctx.fillStyle = '#f2e8d0'; ctx.fill(); ctx.stroke();
-    // Eye
     ctx.beginPath();
     ctx.arc(1.5, -1, 0.8, 0, Math.PI * 2);
     ctx.fillStyle = '#f2e8d0'; ctx.fill();
