@@ -841,6 +841,7 @@
     // Place islands with min-distance rejection, inside the world ellipse.
     // Larger maps have more islands to place, so the attempt budget scales too.
     const islands = [];
+    const usedNames = new Set();
     let attempts = 0;
     const attemptBudget = ISLAND_COUNT * 200;
     const placeRx = WORLD.rx - 200, placeRy = WORLD.ry - 200;
@@ -856,17 +857,45 @@
         const dx = i.x - x, dy = i.y - y;
         if (dx*dx + dy*dy < MIN_ISLAND_DIST * MIN_ISLAND_DIST) { ok = false; break; }
       }
-      if (ok) {
-        const name = prefixes[(r()*prefixes.length)|0] + suffixes[(r()*suffixes.length)|0];
-        islands.push({
-          x, y,
-          radius: 28 + r() * 22,
-          name,
-          modifiers: modifiersFor(name),
-          shape: Math.floor(r() * 1000), // seed for blob shape
-          discovered: false
-        });
+      if (!ok) continue;
+
+      // Pick a name. Names must be unique across the map so each island
+      // gets its own art (modifiers are derived from the name). The first
+      // island placed is the ship's spawn point, so we additionally require
+      // a "neutral" name with no modifier tokens — guaranteeing players
+      // start beside a default blob island.
+      const needNeutral = islands.length === 0;
+      let name = null;
+      for (let na = 0; na < 200; na++) {
+        const candidate = prefixes[(r()*prefixes.length)|0] + suffixes[(r()*suffixes.length)|0];
+        if (usedNames.has(candidate)) continue;
+        if (needNeutral && modifiersFor(candidate).length > 0) continue;
+        name = candidate;
+        break;
       }
+      if (!name) {
+        // Exhausted random tries — scan the full prefix×suffix grid for
+        // any combo that still satisfies the constraints.
+        outer: for (const p of prefixes) {
+          for (const s of suffixes) {
+            const cand = p + s;
+            if (usedNames.has(cand)) continue;
+            if (needNeutral && modifiersFor(cand).length > 0) continue;
+            name = cand;
+            break outer;
+          }
+        }
+      }
+      if (!name) break; // name pool exhausted; stop placing
+      usedNames.add(name);
+      islands.push({
+        x, y,
+        radius: 28 + r() * 22,
+        name,
+        modifiers: modifiersFor(name),
+        shape: Math.floor(r() * 1000), // seed for blob shape
+        discovered: false
+      });
     }
 
     // Spawn ship at first island
