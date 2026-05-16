@@ -1648,7 +1648,34 @@
           }
           bakeFog();
           DBG?.push('info', `revealed all (${state.reveals.length} stamps)`);
-        }
+        },
+        // Internals surfaced for the test harness. Intentionally minimal —
+        // tests use this; production code shouldn't.
+        _test: {
+          update,
+          stampReveal,
+          bakeFog,
+          hasNearbyStamp,
+          loadOrCreateState,
+          saveState,
+          get stampGrid() { return stampGrid; },
+          get fogCanvas() { return fogCanvas; },
+          setShip(x, y, vx = 0, vy = 0, heading = 0) {
+            state.ship.x = x; state.ship.y = y;
+            state.ship.vx = vx; state.ship.vy = vy;
+            state.ship.heading = heading;
+            camera.x = x; camera.y = y;
+            lastRevealX = x; lastRevealY = y;
+          },
+          setTarget(x, y, name = null) { state.target = { x, y, name }; },
+          clearTarget() { state.target = null; },
+          constants: {
+            WORLD, ISLAND_COUNT, MIN_ISLAND_DIST,
+            REVEAL_RADIUS, DEDUP_RADIUS, REVEAL_STEP, FOG_SCALE,
+            DISCOVERY_RADIUS,
+            SHIP_MAX_SPEED, SHIP_ACCEL, SHIP_DRAG, SHIP_TURN_RATE,
+          },
+        },
       };
 
       requestAnimationFrame(loop);

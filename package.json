@@ -1,0 +1,12 @@
+{
+  "name": "skybound",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "node --test test/*.test.js",
+    "bench": "node test/perf.bench.js"
+  },
+  "devDependencies": {
+    "jsdom": "^29.1.1"
+  }
+}
