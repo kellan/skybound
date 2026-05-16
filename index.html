@@ -231,27 +231,32 @@
   /* ===== Debug system ===== */
   #debug-toggle {
     position: absolute;
-    top: env(safe-area-inset-top, 12px); left: 14px;
-    width: 28px; height: 28px;
-    background: rgba(0,0,0,0.55);
-    border: 1px solid rgba(255,155,106,0.6);
+    top: calc(env(safe-area-inset-top, 12px) + 44px); left: 14px;
+    width: 24px; height: 24px;
+    background: rgba(0,0,0,0.4);
+    border: 1px solid rgba(255,155,106,0.45);
     color: #ff9b6a;
-    font: 700 12px/28px monospace;
+    font: 700 10px/22px monospace;
     text-align: center;
     border-radius: 50%;
     z-index: 40;
     cursor: pointer;
     user-select: none;
     pointer-events: auto;
-    transition: background 0.15s;
+    opacity: 0.55;
+    transition: background 0.15s, opacity 0.15s;
   }
+  #debug-toggle:hover, #debug-toggle:active { opacity: 1; }
   #debug-toggle.active {
     background: #ff9b6a; color: #1a2330;
+    opacity: 1;
   }
   #debug-panel {
     position: absolute;
-    top: 50px; left: 8px; right: 8px;
-    max-height: 60vh;
+    top: calc(env(safe-area-inset-top, 12px) + 96px); right: 8px;
+    width: 300px;
+    max-width: calc(100vw - 16px);
+    max-height: 55vh;
     background: rgba(8, 12, 20, 0.92);
     border: 1px solid rgba(255,155,106,0.4);
     color: #d8e4f0;
