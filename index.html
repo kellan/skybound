@@ -376,6 +376,7 @@
           <button id="menu-btn" aria-label="Menu">⋯</button>
           <div id="menu-panel" role="menu">
             <button id="new-voyage-btn" role="menuitem">New Voyage</button>
+            <button id="grand-voyage-btn" role="menuitem">Grand Voyage</button>
             <button id="debug-menu-item" role="menuitem">Debug</button>
           </div>
         </div>
@@ -644,13 +645,22 @@
   // ----- World config -----
   // Oval play area. w/h are the bounding-box dimensions used for the fog mask
   // and screen-space math; cx/cy/rx/ry define the elliptical boundary the ship
-  // and islands stay within.
-  const WORLD = {
-    w: 3600, h: 2800,
-    cx: 1800, cy: 1400,
-    rx: 1800, ry: 1400,
+  // and islands stay within. Two presets: the original "small" map and a
+  // doubled-up "large" one for longer voyages.
+  const MAP_PRESETS = {
+    small: { w: 3600, h: 2800, cx: 1800, cy: 1400, rx: 1800, ry: 1400, islandCount: 22 },
+    large: { w: 7200, h: 5600, cx: 3600, cy: 2800, rx: 3600, ry: 2800, islandCount: 88 },
   };
-  const ISLAND_COUNT = 22;
+  let WORLD = { w: 0, h: 0, cx: 0, cy: 0, rx: 0, ry: 0 };
+  let ISLAND_COUNT = 0;
+  function applyMapPreset(size) {
+    const p = MAP_PRESETS[size] || MAP_PRESETS.small;
+    WORLD.w = p.w; WORLD.h = p.h;
+    WORLD.cx = p.cx; WORLD.cy = p.cy;
+    WORLD.rx = p.rx; WORLD.ry = p.ry;
+    ISLAND_COUNT = p.islandCount;
+  }
+  applyMapPreset('small');
   const MIN_ISLAND_DIST = 380;
   const REVEAL_RADIUS = 220;
   const DISCOVERY_RADIUS = 140; // when an island is "discovered" by name
@@ -660,8 +670,15 @@
   const SHIP_TURN_RATE = 1.4;   // rad / sec
 
   // ----- Island name fragments -----
+  // These are the original "small map" name pool — kept verbatim because the
+  // smaller voyages have a settled, familiar set of island names.
   const NAME_PREFIX = ['Tor','Vel','Cael','Mor','Brin','Sol','Nyx','Aer','Dun','Wyn','Pyre','Hesp','Cira','Mel','Os'];
   const NAME_SUFFIX = ['mara','heim','arden','wyck','antia','foss','vale','reach','spire','holm','aris','marin','nys','dell'];
+
+  // Extra fragments only used on the larger map, where 88 islands need more
+  // unique-feeling names. Combined with the small-map list at generation time.
+  const NAME_PREFIX_LARGE = ['Thal','Quin','Zeph','Bryn','Drav','Eld','Faen','Gael','Iros','Lyr','Myr','Orin','Rhys','Stryn','Vorn','Kael','Yseult','Corv','Asha','Penn'];
+  const NAME_SUFFIX_LARGE = ['mere','wold','crest','fall','gate','hollow','keep','march','ridge','stead','tide','watch','wing','thorn','barrow','crag','glen','strand'];
 
   // ----- State -----
   let state = null;
@@ -669,20 +686,36 @@
   function loadOrCreateState() {
     const saved = localStorage.getItem('skybound-poc-v2');
     if (saved) {
-      try { return JSON.parse(saved); } catch(e) {}
+      try {
+        const parsed = JSON.parse(saved);
+        applyMapPreset(parsed.mapSize || 'small');
+        resizeFogCanvas();
+        if (!parsed.mapSize) parsed.mapSize = 'small';
+        return parsed;
+      } catch(e) {}
     }
-    return newState();
+    return newState('small');
   }
 
-  function newState() {
+  function newState(mapSize = 'small') {
+    applyMapPreset(mapSize);
+    resizeFogCanvas();
+
     const seed = (Math.random() * 1e9) | 0;
     const r = rng(seed);
 
-    // Place islands with min-distance rejection, inside the world ellipse
+    // Larger map draws from the combined name pool for more variety; the
+    // small map keeps its original 15×14 list untouched.
+    const prefixes = mapSize === 'large' ? NAME_PREFIX.concat(NAME_PREFIX_LARGE) : NAME_PREFIX;
+    const suffixes = mapSize === 'large' ? NAME_SUFFIX.concat(NAME_SUFFIX_LARGE) : NAME_SUFFIX;
+
+    // Place islands with min-distance rejection, inside the world ellipse.
+    // Larger maps have more islands to place, so the attempt budget scales too.
     const islands = [];
     let attempts = 0;
+    const attemptBudget = ISLAND_COUNT * 200;
     const placeRx = WORLD.rx - 200, placeRy = WORLD.ry - 200;
-    while (islands.length < ISLAND_COUNT && attempts < 3000) {
+    while (islands.length < ISLAND_COUNT && attempts < attemptBudget) {
       attempts++;
       // Rejection-sample the unit disk, then scale to the inset ellipse
       const u = r() * 2 - 1, v = r() * 2 - 1;
@@ -698,7 +731,7 @@
         islands.push({
           x, y,
           radius: 28 + r() * 22,
-          name: NAME_PREFIX[(r()*NAME_PREFIX.length)|0] + NAME_SUFFIX[(r()*NAME_SUFFIX.length)|0],
+          name: prefixes[(r()*prefixes.length)|0] + suffixes[(r()*suffixes.length)|0],
           shape: Math.floor(r() * 1000), // seed for blob shape
           discovered: false
         });
@@ -710,6 +743,7 @@
 
     return {
       seed,
+      mapSize,
       islands,
       ship: {
         x: start.x + 60, y: start.y + 60,
@@ -726,6 +760,7 @@
     // strip ship velocity (recomputed) but keep position/heading
     const s = {
       seed: state.seed,
+      mapSize: state.mapSize || 'small',
       islands: state.islands.map(i => ({
         x: i.x, y: i.y, radius: i.radius, name: i.name,
         shape: i.shape, discovered: i.discovered
@@ -742,15 +777,47 @@
   // start fully opaque, and "erase" circles for reveals.
   const FOG_SCALE = 0.25; // mask is 25% of world resolution
   const fogCanvas = document.createElement('canvas');
-  fogCanvas.width = Math.floor(WORLD.w * FOG_SCALE);
-  fogCanvas.height = Math.floor(WORLD.h * FOG_SCALE);
   const fogCtx = fogCanvas.getContext('2d');
+  function resizeFogCanvas() {
+    fogCanvas.width = Math.floor(WORLD.w * FOG_SCALE);
+    fogCanvas.height = Math.floor(WORLD.h * FOG_SCALE);
+  }
+  resizeFogCanvas();
+
+  // Spatial grid for stamp dedup. Cell size equals the dedup radius, so a 3x3
+  // neighborhood around the query cell covers every possible nearby stamp.
+  const DEDUP_RADIUS = REVEAL_RADIUS * 0.5;
+  const DEDUP_CELL = DEDUP_RADIUS;
+  const stampGrid = new Map();
+  function indexStamp(wx, wy) {
+    const k = Math.floor(wx / DEDUP_CELL) + ',' + Math.floor(wy / DEDUP_CELL);
+    let arr = stampGrid.get(k);
+    if (!arr) { arr = []; stampGrid.set(k, arr); }
+    arr.push(wx, wy);
+  }
+  function hasNearbyStamp(wx, wy) {
+    const cx = Math.floor(wx / DEDUP_CELL), cy = Math.floor(wy / DEDUP_CELL);
+    const r2 = DEDUP_RADIUS * DEDUP_RADIUS;
+    for (let dx = -1; dx <= 1; dx++) {
+      for (let dy = -1; dy <= 1; dy++) {
+        const arr = stampGrid.get((cx + dx) + ',' + (cy + dy));
+        if (!arr) continue;
+        for (let i = 0; i < arr.length; i += 2) {
+          const ex = arr[i] - wx, ey = arr[i + 1] - wy;
+          if (ex * ex + ey * ey < r2) return true;
+        }
+      }
+    }
+    return false;
+  }
 
   function bakeFog() {
     // Fully opaque dark fog
     fogCtx.globalCompositeOperation = 'source-over';
     fogCtx.fillStyle = 'rgba(18, 26, 38, 0.92)';
     fogCtx.fillRect(0, 0, fogCanvas.width, fogCanvas.height);
+    // Rebuild the spatial index alongside the visual mask
+    stampGrid.clear();
     // Erase reveal circles with soft edge
     fogCtx.globalCompositeOperation = 'destination-out';
     for (const r of state.reveals) {
@@ -764,13 +831,17 @@
       fogCtx.beginPath();
       fogCtx.arc(x, y, rad, 0, Math.PI * 2);
       fogCtx.fill();
+      indexStamp(r.x, r.y);
     }
     fogCtx.globalCompositeOperation = 'source-over';
   }
 
-  // Stamp a single new reveal incrementally (cheaper than rebaking)
+  // Stamp a single new reveal incrementally (cheaper than rebaking).
+  // Returns false if dedup'd against an existing stamp.
   function stampReveal(wx, wy) {
+    if (hasNearbyStamp(wx, wy)) return false;
     state.reveals.push({ x: wx, y: wy });
+    indexStamp(wx, wy);
     const x = wx * FOG_SCALE, y = wy * FOG_SCALE;
     const rad = REVEAL_RADIUS * FOG_SCALE;
     fogCtx.globalCompositeOperation = 'destination-out';
@@ -783,6 +854,7 @@
     fogCtx.arc(x, y, rad, 0, Math.PI * 2);
     fogCtx.fill();
     fogCtx.globalCompositeOperation = 'source-over';
+    return true;
   }
 
   // ----- Camera -----
@@ -1596,7 +1668,40 @@
           }
           bakeFog();
           DBG?.push('info', `revealed all (${state.reveals.length} stamps)`);
-        }
+        },
+        // Internals surfaced for the test harness. Intentionally minimal —
+        // tests use this; production code shouldn't.
+        _test: {
+          update,
+          stampReveal,
+          bakeFog,
+          hasNearbyStamp,
+          loadOrCreateState,
+          saveState,
+          get stampGrid() { return stampGrid; },
+          get fogCanvas() { return fogCanvas; },
+          get edgeLabelHits() { return edgeLabelHits; },
+          get viewW() { return viewW; },
+          get viewH() { return viewH; },
+          get camera() { return camera; },
+          onTap,
+          toggleMinimap,
+          setShip(x, y, vx = 0, vy = 0, heading = 0) {
+            state.ship.x = x; state.ship.y = y;
+            state.ship.vx = vx; state.ship.vy = vy;
+            state.ship.heading = heading;
+            camera.x = x; camera.y = y;
+            lastRevealX = x; lastRevealY = y;
+          },
+          setTarget(x, y, name = null) { state.target = { x, y, name }; },
+          clearTarget() { state.target = null; },
+          constants: {
+            WORLD, ISLAND_COUNT, MIN_ISLAND_DIST,
+            REVEAL_RADIUS, DEDUP_RADIUS, REVEAL_STEP, FOG_SCALE,
+            DISCOVERY_RADIUS,
+            SHIP_MAX_SPEED, SHIP_ACCEL, SHIP_DRAG, SHIP_TURN_RATE,
+          },
+        },
       };
 
       requestAnimationFrame(loop);
@@ -1645,7 +1750,18 @@
     const menuBtn = document.getElementById('menu-btn');
     const menuPanel = document.getElementById('menu-panel');
     const newVoyageBtn = document.getElementById('new-voyage-btn');
+    const grandVoyageBtn = document.getElementById('grand-voyage-btn');
     if (!menuBtn || !menuPanel) return;
+
+    function startVoyage(mapSize) {
+      localStorage.removeItem('skybound-poc-v2');
+      state = newState(mapSize);
+      camera.x = state.ship.x;
+      camera.y = state.ship.y;
+      lastRevealX = state.ship.x; lastRevealY = state.ship.y;
+      bakeFog();
+      window.__DBG?.push('info', `new ${mapSize} voyage`);
+    }
 
     function setMenu(open) {
       menuPanel.classList.toggle('open', open);
@@ -1666,13 +1782,14 @@
       newVoyageBtn.addEventListener('click', (e) => {
         e.stopPropagation();
         setMenu(false);
-        localStorage.removeItem('skybound-poc-v2');
-        state = newState();
-        camera.x = state.ship.x;
-        camera.y = state.ship.y;
-        lastRevealX = state.ship.x; lastRevealY = state.ship.y;
-        bakeFog();
-        window.__DBG?.push('info', 'new voyage');
+        startVoyage('small');
+      });
+    }
+    if (grandVoyageBtn) {
+      grandVoyageBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        setMenu(false);
+        startVoyage('large');
       });
     }
   })();
