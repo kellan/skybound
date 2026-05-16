@@ -229,28 +229,6 @@
   #menu-panel button:active { background: rgba(42, 36, 23, 0.1); }
 
   /* ===== Debug system ===== */
-  #debug-toggle {
-    position: absolute;
-    top: calc(env(safe-area-inset-top, 12px) + 44px); left: 14px;
-    width: 24px; height: 24px;
-    background: rgba(0,0,0,0.4);
-    border: 1px solid rgba(255,155,106,0.45);
-    color: #ff9b6a;
-    font: 700 10px/22px monospace;
-    text-align: center;
-    border-radius: 50%;
-    z-index: 40;
-    cursor: pointer;
-    user-select: none;
-    pointer-events: auto;
-    opacity: 0.55;
-    transition: background 0.15s, opacity 0.15s;
-  }
-  #debug-toggle:hover, #debug-toggle:active { opacity: 1; }
-  #debug-toggle.active {
-    background: #ff9b6a; color: #1a2330;
-    opacity: 1;
-  }
   #debug-panel {
     position: absolute;
     top: calc(env(safe-area-inset-top, 12px) + 96px); right: 8px;
@@ -398,6 +376,7 @@
           <button id="menu-btn" aria-label="Menu">⋯</button>
           <div id="menu-panel" role="menu">
             <button id="new-voyage-btn" role="menuitem">New Voyage</button>
+            <button id="debug-menu-item" role="menuitem">Debug</button>
           </div>
         </div>
       </div>
@@ -441,7 +420,6 @@
     </div>
 
     <!-- Debug UI -->
-    <div id="debug-toggle" title="Toggle debug">D</div>
     <div id="error-pill"></div>
     <div id="debug-panel">
       <div id="debug-stats">
@@ -540,14 +518,13 @@
   // Toggle wiring — must wait for DOMContentLoaded since this script
   // is in <head> position; if loaded after body, can run immediately.
   function wireDebugUI() {
-    const toggle = document.getElementById('debug-toggle');
+    const menuItem = document.getElementById('debug-menu-item');
     const panel = document.getElementById('debug-panel');
     const pill = document.getElementById('error-pill');
-    if (!toggle || !panel) return;
+    if (!panel) return;
 
     function setEnabled(on) {
       DBG.enabled = on;
-      toggle.classList.toggle('active', on);
       panel.classList.toggle('open', on);
       if (on) {
         renderLog();
@@ -556,7 +533,7 @@
       }
     }
 
-    toggle.addEventListener('click', () => setEnabled(!DBG.enabled));
+    if (menuItem) menuItem.addEventListener('click', () => setEnabled(!DBG.enabled));
     if (pill) pill.addEventListener('click', () => setEnabled(true));
 
     // Triple-tap anywhere on the top edge as a backup discovery gesture
