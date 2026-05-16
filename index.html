@@ -1271,6 +1271,9 @@
     manta: 'topdown', jellyfish: 'topdown',
     wyvern: 'profile', cloudGalleon: 'profile', windSerpent: 'profile',
   };
+  // Profile ships that animate their own facing transition (instead of an
+  // instant flip-x in the dispatcher). They receive facingLeft as the 4th arg.
+  const SHIP_OWN_FACING = { windSerpent: true };
 
   // Update profile-ship facing with hysteresis so head-on north/south travel
   // doesn't cause a flip flicker.
@@ -1311,12 +1314,13 @@
       updateShipFacing(heading);
       const bob = Math.sin(t * 1.3) * 0.9;
       ctx.translate(0, bob);
-      if (state.ship.facingLeft) ctx.scale(-1, 1);
+      // Ships that animate their own facing skip the dispatcher's flip.
+      if (state.ship.facingLeft && !SHIP_OWN_FACING[state.shipType]) ctx.scale(-1, 1);
     }
 
     const drawer = SHIP_DRAWERS[state.shipType] || SHIP_DRAWERS.sloop;
     const t0 = performance.now();
-    drawer(ctx, t, speed01);
+    drawer(ctx, t, speed01, state.ship.facingLeft);
     const dt = performance.now() - t0;
     recordShipRenderTime(dt);
 
@@ -1633,18 +1637,65 @@
     ctx.fillStyle = 'rgba(255, 255, 255, 0.55)'; ctx.fill();
   }
 
-  function drawShipWindSerpent(ctx, t, speed) {
-    // Profile view: head + winglets in front, segmented body curling behind.
+  // Per-canvas animation state for the wind serpent's segment angles.
+  // WeakMap so the game's main canvas and each hangar preview canvas keep
+  // independent state (and it's collected when the canvas goes away).
+  const wsStateMap = new WeakMap();
+
+  function drawShipWindSerpent(ctx, t, speed, facingLeft = false) {
+    // Profile view, but turning isn't a snap flip — each segment's facing
+    // chases the segment in front of it, so the body coils through the turn.
     const segs = 7;
     const segLen = 4.2;
     const amp = 3.2;
+    const target = facingLeft ? Math.PI : 0;
+
+    let st = wsStateMap.get(ctx);
+    if (!st) {
+      st = { angles: new Array(segs).fill(target), lastT: t };
+      wsStateMap.set(ctx, st);
+    }
+    const dt = Math.min(0.1, Math.max(0, t - st.lastT));
+    st.lastT = t;
+
+    // Head chases the target facing; each segment chases the one in front of
+    // it slightly slower, so a turn propagates back through the body.
+    const headRate = 3.2;
+    const bodyRate = 2.4;
+    const hd = angleDiff(st.angles[0], target);
+    st.angles[0] += Math.sign(hd) * Math.min(Math.abs(hd), headRate * dt);
+    for (let i = 1; i < segs; i++) {
+      const d = angleDiff(st.angles[i], st.angles[i - 1]);
+      st.angles[i] += Math.sign(d) * Math.min(Math.abs(d), bodyRate * dt);
+    }
+
+    // Build segment positions by stepping backward along each segment's trail
+    // direction (opposite of its facing). Perpendicular sinusoidal wiggle
+    // adds the original "snake undulation" feel even mid-turn.
+    const wigRate = 2.6 + speed * 1;
     const points = [];
+    let x = 0, y = 0;
     for (let i = 0; i < segs; i++) {
       const along = i / (segs - 1);
-      const x = 12 - i * segLen;
-      const y = Math.sin(t * (2.6 + speed * 1) - i * 0.9) * amp * along;
-      points.push({ x, y, r: 4.6 - along * 3.6 });
+      const a = st.angles[i];
+      const trailAng = a + Math.PI;
+      const wig = Math.sin(t * wigRate - i * 0.9) * amp * along;
+      const perpX = -Math.sin(trailAng);
+      const perpY =  Math.cos(trailAng);
+      points.push({ x: x + perpX * wig, y: y + perpY * wig, r: 4.6 - along * 3.6 });
+      x += segLen * Math.cos(trailAng);
+      y += segLen * Math.sin(trailAng);
     }
+
+    // Re-center so the body's center of mass sits at the ship anchor.
+    // Without this, the head's position would drift relative to the camera
+    // during a turn and the ship would feel like it's swimming sideways.
+    let cmx = 0, cmy = 0;
+    for (const p of points) { cmx += p.x; cmy += p.y; }
+    cmx /= segs; cmy /= segs;
+    for (const p of points) { p.x -= cmx; p.y -= cmy; }
+
+    // Tail-first so head draws on top
     ctx.strokeStyle = '#2a2417'; ctx.lineWidth = 0.8;
     for (let i = segs - 1; i >= 1; i--) {
       const p = points[i];
@@ -1653,13 +1704,12 @@
       ctx.fillStyle = '#8a4eb0'; ctx.fill();
       ctx.stroke();
     }
+
+    // Head + winglets, rotated to the head's current facing.
     const head = points[0];
-    const next = points[1];
-    const headAng = Math.atan2(head.y - next.y, head.x - next.x);
     ctx.save();
     ctx.translate(head.x, head.y);
-    ctx.rotate(headAng);
-    // Winglets
+    ctx.rotate(st.angles[0]);
     const wingFlap = Math.sin(t * (5.5 + speed * 1.5)) * 0.45;
     for (const side of [-1, 1]) {
       ctx.save();
@@ -1673,7 +1723,6 @@
       ctx.fillStyle = '#b07cd0'; ctx.fill(); ctx.stroke();
       ctx.restore();
     }
-    // Head
     ctx.beginPath();
     ctx.moveTo(5, 0);
     ctx.quadraticCurveTo(3, -4, -3, -3);
@@ -1681,12 +1730,10 @@
     ctx.quadraticCurveTo(3, 4, 5, 0);
     ctx.closePath();
     ctx.fillStyle = '#8a4eb0'; ctx.fill(); ctx.stroke();
-    // Horn
     ctx.beginPath();
     ctx.moveTo(-1, -3); ctx.lineTo(-3, -6); ctx.lineTo(0, -4);
     ctx.closePath();
     ctx.fillStyle = '#f2e8d0'; ctx.fill(); ctx.stroke();
-    // Eye
     ctx.beginPath();
     ctx.arc(1.5, -1, 0.8, 0, Math.PI * 2);
     ctx.fillStyle = '#f2e8d0'; ctx.fill();
