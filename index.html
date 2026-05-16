@@ -1427,7 +1427,7 @@
 
   function drawShipSeaTurtle(ctx, t, speed) {
     // Top-down sea turtle: teal palette, long front flippers, scute pattern.
-    const paddleRate = 2.2 + speed * 1.2;
+    const paddleRate = 1.2 + speed * 0.5;
     const teal      = '#3a7a92';
     const tealLight = '#4a8aa0';
     const tealDeep  = '#2a5a72';
@@ -1518,7 +1518,7 @@
   }
 
   function drawShipManta(ctx, t, speed) {
-    const wingPhase = Math.sin(t * (2.4 + speed * 1.2));
+    const wingPhase = Math.sin(t * (1.0 + speed * 0.5));
     // Body
     ctx.beginPath();
     ctx.moveTo(11, 0);
@@ -1557,7 +1557,7 @@
     // Whip tail
     ctx.beginPath();
     ctx.moveTo(-9, 0);
-    ctx.quadraticCurveTo(-15, Math.sin(t * 2.4) * 1.6, -22, Math.sin(t * 2.4 + 1) * 2);
+    ctx.quadraticCurveTo(-15, Math.sin(t * 1.0) * 1.6, -22, Math.sin(t * 1.0 + 1) * 2);
     ctx.lineWidth = 0.9; ctx.stroke();
     // Eyes
     for (const side of [-1, 1]) {
