@@ -529,6 +529,7 @@
         <button class="debug-btn" id="dbg-teleport">Teleport Random</button>
         <button class="debug-btn" id="dbg-reveal-all">Reveal All</button>
         <button class="debug-btn" id="dbg-copy">Copy Log</button>
+        <button class="debug-btn" id="dbg-close">Close</button>
       </div>
     </div>
   </div>
@@ -624,6 +625,8 @@
 
     if (menuItem) menuItem.addEventListener('click', () => setEnabled(!DBG.enabled));
     if (pill) pill.addEventListener('click', () => setEnabled(true));
+    const closeBtn = document.getElementById('dbg-close');
+    if (closeBtn) closeBtn.addEventListener('click', () => setEnabled(false));
 
     // Triple-tap anywhere on the top edge as a backup discovery gesture
     let taps = []; const TAP_WIN = 600;
