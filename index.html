@@ -283,11 +283,7 @@
   }
   .hangar-card .hc-name {
     font-style: italic; font-size: 13px; color: var(--ink);
-  }
-  .hangar-card .hc-view {
-    font-size: 9px; letter-spacing: 0.1em;
-    text-transform: uppercase; color: var(--ink); opacity: 0.55;
-    margin-bottom: 3px;
+    margin-bottom: 2px;
   }
   .hangar-card .hc-tag {
     position: absolute; top: 6px; right: 6px;
@@ -2476,14 +2472,14 @@
 
     // ----- Hangar -----
     const SHIPS = [
-      { id: 'sloop',        name: 'Sloop',         view: 'top-down' },
-      { id: 'butterfly',    name: 'Butterfly',     view: 'top-down' },
-      { id: 'seaTurtle',    name: 'Sea turtle',    view: 'top-down' },
-      { id: 'manta',        name: 'Manta ray',     view: 'top-down' },
-      { id: 'jellyfish',    name: 'Jellyfish',     view: 'top-down' },
-      { id: 'wyvern',       name: 'Wyvern',        view: 'profile' },
-      { id: 'cloudGalleon', name: 'Cloud galleon', view: 'profile' },
-      { id: 'windSerpent',  name: 'Wind serpent',  view: 'profile' },
+      { id: 'sloop',        name: 'Sloop' },
+      { id: 'butterfly',    name: 'Butterfly' },
+      { id: 'seaTurtle',    name: 'Sea turtle' },
+      { id: 'manta',        name: 'Manta ray' },
+      { id: 'jellyfish',    name: 'Jellyfish' },
+      { id: 'wyvern',       name: 'Wyvern' },
+      { id: 'cloudGalleon', name: 'Cloud galleon' },
+      { id: 'windSerpent',  name: 'Wind serpent' },
     ];
     const hangarMenuItem = document.getElementById('hangar-menu-item');
     const hangarOverlay  = document.getElementById('hangar-overlay');
@@ -2509,7 +2505,7 @@
         card.className = 'hangar-card' + (s.id === state.shipType ? ' selected' : '');
         card.dataset.shipId = s.id;
         const tag = s.id === state.shipType ? '<span class="hc-tag">Current</span>' : '';
-        card.innerHTML = `<div class="hc-name">${s.name}</div><div class="hc-view">${s.view}</div><canvas></canvas>${tag}`;
+        card.innerHTML = `<div class="hc-name">${s.name}</div><canvas></canvas>${tag}`;
         hangarGrid.appendChild(card);
         const canvas = card.querySelector('canvas');
         const W = 180, H = 120;
