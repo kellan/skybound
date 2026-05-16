@@ -326,6 +326,7 @@
     grid-template-columns: auto 1fr;
     gap: 1px 8px;
     font-size: 10px;
+    padding-right: 22px;
   }
   #debug-stats .k { color: #ff9b6a; }
   #debug-stats .v { color: #d8e4f0; word-break: break-all; }
@@ -360,6 +361,18 @@
     border-radius: 2px;
   }
   .debug-btn:active { background: rgba(255,155,106,0.3); }
+  #dbg-close {
+    position: absolute;
+    top: 4px; right: 6px;
+    background: transparent;
+    border: none;
+    color: #ff9b6a;
+    font: 700 16px/1 monospace;
+    padding: 2px 6px;
+    cursor: pointer;
+    border-radius: 2px;
+  }
+  #dbg-close:active { background: rgba(255,155,106,0.3); }
 
   /* Persistent error pill — shows even when panel closed */
   #error-pill {
@@ -510,6 +523,7 @@
     <!-- Debug UI -->
     <div id="error-pill"></div>
     <div id="debug-panel">
+      <button id="dbg-close" aria-label="Close debug panel">×</button>
       <div id="debug-stats">
         <span class="k">boot</span><span class="v" id="dbg-boot">—</span>
         <span class="k">loop</span><span class="v" id="dbg-loop">—</span>
@@ -624,6 +638,7 @@
 
     if (menuItem) menuItem.addEventListener('click', () => setEnabled(!DBG.enabled));
     if (pill) pill.addEventListener('click', () => setEnabled(true));
+    document.getElementById('dbg-close')?.addEventListener('click', () => setEnabled(false));
 
     // Triple-tap anywhere on the top edge as a backup discovery gesture
     let taps = []; const TAP_WIN = 600;
