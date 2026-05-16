@@ -1046,6 +1046,10 @@
       const maxTurn = SHIP_TURN_RATE * turnBoost * dt;
       const turn = Math.sign(diff) * Math.min(Math.abs(diff), maxTurn);
       ship.heading += turn;
+      // Wrap to (-π, π] so it can't drift unbounded over a long session.
+      if (ship.heading > Math.PI || ship.heading <= -Math.PI) {
+        ship.heading = ((ship.heading + Math.PI) % (2 * Math.PI) + 2 * Math.PI) % (2 * Math.PI) - Math.PI;
+      }
 
       // Compute braking distance: how far we'd travel decelerating from current
       // speed at SHIP_ACCEL. v^2 = u^2 + 2*a*s  -->  s = u^2 / (2*a)
@@ -2240,7 +2244,7 @@
   function compassDir(rad) {
     // rad: 0 = east. Convert to compass with N at top.
     let deg = rad * 180 / Math.PI;
-    deg = (deg + 90 + 360) % 360; // 0 = N now
+    deg = ((deg + 90) % 360 + 360) % 360; // positive modulo: 0 = N now
     const dirs = ['N','NE','E','SE','S','SW','W','NW'];
     return dirs[Math.round(deg / 45) % 8] + ' ' + Math.round(deg) + '°';
   }
