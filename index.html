@@ -830,6 +830,18 @@
     const rect = canvas.getBoundingClientRect();
     const sx = clientX - rect.left;
     const sy = clientY - rect.top;
+
+    // First check rim waypoint chips — they sit on top of everything else
+    // visually, so they should win against any other interpretation.
+    for (const hit of edgeLabelHits) {
+      if (sx >= hit.x && sx <= hit.x + hit.w &&
+          sy >= hit.y && sy <= hit.y + hit.h) {
+        const i = hit.island;
+        state.target = { x: i.x, y: i.y, name: i.name };
+        return;
+      }
+    }
+
     const w = screenToWorld(sx, sy);
     // Check if tap is on a discovered island -> target its center
     let pickedIsland = null;
@@ -1174,10 +1186,15 @@
     ctx.restore();
   }
 
+  // Hit rects for the rim chips, refreshed every frame so a tap can pick the
+  // island whose chip was touched. Screen-space coords.
+  let edgeLabelHits = [];
+
   // For each discovered island that's off-screen, draw a small parchment chip
   // at the inner viewport rim along the line from screen center toward the
   // island, so it acts as a directional waypoint. Closer = more opaque.
   function drawEdgeLabels() {
+    edgeLabelHits = [];
     // Inner rect the labels live inside (avoids top bar and bottom HUD).
     const padX = 14;
     const padTop = 70;
@@ -1232,6 +1249,9 @@
 
       ctx.fillStyle = `rgba(42, 36, 23, ${0.95 * fade})`;
       ctx.fillText(label, lx + 6, ly + chipH - 4);
+
+      // Expand the hit rect a touch so it's comfortable on a fingertip.
+      edgeLabelHits.push({ x: lx - 4, y: ly - 4, w: chipW + 8, h: chipH + 8, island: i });
     }
   }
 
