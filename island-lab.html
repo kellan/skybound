@@ -324,6 +324,7 @@
     const seed = opts.seed ?? 311;
     const radius = opts.radius ?? 36;
     const volcanic = opts.volcanic === true;
+    const rocky = opts.rocky === true;
     const r = makeRng(seed);
     const points = 14;
     const verts = [];
@@ -359,6 +360,10 @@
       grad.addColorStop(0, '#5a3a2a');
       grad.addColorStop(0.55, '#3a2018');
       grad.addColorStop(1, '#1a0c08');
+    } else if (rocky) {
+      grad.addColorStop(0, '#a8b0aa');
+      grad.addColorStop(0.55, '#6e766e');
+      grad.addColorStop(1, '#42463e');
     } else {
       grad.addColorStop(0, '#6b8a5a');
       grad.addColorStop(0.55, '#4d6a40');
@@ -374,7 +379,9 @@
     if (!opts.skipHighlight) {
       ctx.beginPath();
       ctx.arc(-radius * 0.2, -radius * 0.2, radius * 0.18, 0, Math.PI * 2);
-      ctx.fillStyle = volcanic ? 'rgba(255,140,80,0.45)' : 'rgba(220, 210, 160, 0.5)';
+      ctx.fillStyle = volcanic ? 'rgba(255,140,80,0.45)'
+                    : rocky    ? 'rgba(220, 224, 218, 0.55)'
+                               : 'rgba(220, 210, 160, 0.5)';
       ctx.fill();
     }
 
@@ -1301,6 +1308,7 @@
     mods = mods || [];
     const has = m => mods.includes(m);
     const volcanic = has('asha');
+    const rocky = has('crag') || has('reach');
 
     // Sol + spire/watch promotes to a lighthouse (kid's request).
     const lighthouseCombo = has('sol') && (has('spire') || has('watch'));
@@ -1327,7 +1335,7 @@
     if (has('wing') || has('aer')) modBellyWings(ctx, t, br, stub);
 
     // The blob itself.
-    const blob = drawBlob(ctx, t, br, { seed, volcanic, skipHighlight: hasTopMod });
+    const blob = drawBlob(ctx, t, br, { seed, volcanic, rocky, skipHighlight: hasTopMod });
 
     // Top-anchored modifier. Combinations are handled explicitly:
     //   sol + spire → lighthouse (combo)
