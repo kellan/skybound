@@ -743,7 +743,7 @@
   // doubled-up "large" one for longer voyages.
   const MAP_PRESETS = {
     small: { w: 3600, h: 2800, cx: 1800, cy: 1400, rx: 1800, ry: 1400, islandCount: 22 },
-    large: { w: 7200, h: 5600, cx: 3600, cy: 2800, rx: 3600, ry: 2800, islandCount: 88 },
+    large: { w: 7200, h: 5600, cx: 3600, cy: 2800, rx: 3600, ry: 2800, islandCount: 55 },
   };
   let WORLD = { w: 0, h: 0, cx: 0, cy: 0, rx: 0, ry: 0 };
   let ISLAND_COUNT = 0;
@@ -756,6 +756,9 @@
   }
   applyMapPreset('small');
   const MIN_ISLAND_DIST = 380;
+  // Min-distance grows with normalized radius so the rim feels emptier than
+  // the center. 0 = uniform spacing everywhere; higher = more sparse at rim.
+  const RIM_SPARSITY = 0.5;
   const REVEAL_RADIUS = 220;
   const DISCOVERY_RADIUS = 140; // when an island is "discovered" by name
   const SHIP_MAX_SPEED = 110;   // px / sec
@@ -815,13 +818,20 @@
       attempts++;
       // Rejection-sample the unit disk, then scale to the inset ellipse
       const u = r() * 2 - 1, v = r() * 2 - 1;
-      if (u*u + v*v > 1) continue;
+      const r2 = u*u + v*v;
+      if (r2 > 1) continue;
       const x = WORLD.cx + u * placeRx;
       const y = WORLD.cy + v * placeRy;
+      // Local min-distance grows with normalized radius so islands cluster
+      // near the middle and the rim feels sparse. Each island carries its
+      // own minDist; for a pair, the larger value wins.
+      const nr = Math.sqrt(r2);
+      const localMinDist = MIN_ISLAND_DIST * (1 + nr * RIM_SPARSITY);
       let ok = true;
       for (const i of islands) {
         const dx = i.x - x, dy = i.y - y;
-        if (dx*dx + dy*dy < MIN_ISLAND_DIST * MIN_ISLAND_DIST) { ok = false; break; }
+        const minD = Math.max(localMinDist, i._minDist);
+        if (dx*dx + dy*dy < minD * minD) { ok = false; break; }
       }
       if (ok) {
         islands.push({
@@ -829,7 +839,8 @@
           radius: 28 + r() * 22,
           name: prefixes[(r()*prefixes.length)|0] + suffixes[(r()*suffixes.length)|0],
           shape: Math.floor(r() * 1000), // seed for blob shape
-          discovered: false
+          discovered: false,
+          _minDist: localMinDist,
         });
       }
     }
