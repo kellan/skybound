@@ -119,7 +119,7 @@
       title: 'Combined name examples',
       note: 'Prefix + suffix modifiers stacked on one blob. Click Re-roll to sample different shapes for the same name.',
       items: [
-        { id: 'name_solspire',  name: 'Solspire',   desc: 'sol (halo) + spire (seashell tower) — sacred lighthouse.', mods: ['sol','spire'] },
+        { id: 'name_solspire',  name: 'Solspire',   desc: 'sol + spire promotes to a striped lighthouse with sun halo.', mods: ['sol','spire'] },
         { id: 'name_pyrecrag',  name: 'Pyrecrag',   desc: 'pyre (ember wyvern) + crag (peak) — dragon mountain.',     mods: ['pyre','crag'] },
         { id: 'name_ashakeep',  name: 'Ashakeep',   desc: 'asha (volcano) + keep (castle) — fortress on the fire.',    mods: ['asha','keep'] },
         { id: 'name_wynhollow', name: 'Wynhollow',  desc: 'wyn (wyvern peak) + hollow (overgrown) — lost in wilds.',   mods: ['wyn','hollow'] },
@@ -369,11 +369,14 @@
     ctx.strokeStyle = 'rgba(20, 25, 15, 0.7)';
     ctx.lineWidth = 1.5;
     ctx.stroke();
-    // highlight
-    ctx.beginPath();
-    ctx.arc(-radius * 0.2, -radius * 0.2, radius * 0.18, 0, Math.PI * 2);
-    ctx.fillStyle = volcanic ? 'rgba(255,140,80,0.45)' : 'rgba(220, 210, 160, 0.5)';
-    ctx.fill();
+    // Highlight (a small lighter patch in the upper-left — also where any
+    // "on-top" modifier anchors). Suppressed when a modifier sits there.
+    if (!opts.skipHighlight) {
+      ctx.beginPath();
+      ctx.arc(-radius * 0.2, -radius * 0.2, radius * 0.18, 0, Math.PI * 2);
+      ctx.fillStyle = volcanic ? 'rgba(255,140,80,0.45)' : 'rgba(220, 210, 160, 0.5)';
+      ctx.fill();
+    }
 
     // Volcanic lava cracks on the underside
     if (volcanic) {
@@ -403,6 +406,10 @@
       verts,
       topY: topVert.y,
       topX: topVert.x,
+      // Where on the visible "deck" of the island top-anchored modifiers sit
+      // (the same spot the original highlight occupied). Reads as a clearing
+      // or plateau on the upper-left of the blob.
+      surfaceAnchor: { x: -radius * 0.2, y: -radius * 0.2 },
       leftShoulder:  { x: -radius * 0.75, y: -radius * 0.15 },
       rightShoulder: {  x: radius * 0.75, y: -radius * 0.15 },
       bottomY: radius * 0.95,
@@ -421,61 +428,60 @@
   // If two modifiers want the same slot, the second one is shifted to its
   // fallback position (center → right of center; side → opposite side).
   function modCastle(ctx, t, br, blob, opts = {}) {
-    const x = opts.x ?? 0;
-    const y = (opts.y ?? (blob.topY + 2));
+    // Small keep sitting on the upper-left surface (where the highlight was).
+    const a = opts.anchor || blob.surfaceAnchor;
     const s = opts.scale ?? 1;
     ctx.save();
-    ctx.translate(x, y);
+    ctx.translate(a.x, a.y);
     ctx.scale(s, s);
     // Tower body
     ctx.fillStyle = '#cabd99';
-    ctx.fillRect(-5, -12, 10, 12);
+    ctx.fillRect(-4, -10, 8, 10);
     ctx.strokeStyle = '#2a2417';
-    ctx.lineWidth = 0.8;
-    ctx.strokeRect(-5, -12, 10, 12);
+    ctx.lineWidth = 0.7;
+    ctx.strokeRect(-4, -10, 8, 10);
     // Crenellations
-    for (const cx of [-4.5, -2.5, -0.5, 1.5, 3.5]) {
+    for (const cx of [-3.6, -1.8, 0, 1.8]) {
       ctx.fillStyle = '#cabd99';
-      ctx.fillRect(cx, -14.4, 1.4, 2.6);
-      ctx.strokeRect(cx, -14.4, 1.4, 2.6);
+      ctx.fillRect(cx, -12, 1.4, 2);
+      ctx.strokeRect(cx, -12, 1.4, 2);
     }
     // Stone seams
     ctx.strokeStyle = 'rgba(40,30,20,0.45)';
-    ctx.lineWidth = 0.35;
-    for (let i = 1; i < 4; i++) {
-      const yy = -i * 3;
+    ctx.lineWidth = 0.3;
+    for (let i = 1; i < 3; i++) {
       ctx.beginPath();
-      ctx.moveTo(-5, yy);
-      ctx.lineTo(5, yy);
+      ctx.moveTo(-4, -i * 3);
+      ctx.lineTo(4, -i * 3);
       ctx.stroke();
     }
     // Arched door
     ctx.fillStyle = '#2a1f12';
     ctx.beginPath();
-    ctx.moveTo(-1.4, 0);
-    ctx.lineTo(-1.4, -3);
-    ctx.quadraticCurveTo(0, -4.4, 1.4, -3);
-    ctx.lineTo(1.4, 0);
+    ctx.moveTo(-1.1, 0);
+    ctx.lineTo(-1.1, -2.4);
+    ctx.quadraticCurveTo(0, -3.6, 1.1, -2.4);
+    ctx.lineTo(1.1, 0);
     ctx.closePath();
     ctx.fill();
-    // Window
+    // Window slit
     ctx.fillStyle = '#3a2810';
-    ctx.fillRect(-1, -8, 2, 2);
+    ctx.fillRect(-0.7, -7, 1.4, 1.6);
     // Pennant
-    const flutter = breeze ? Math.sin(t * 4) * 0.5 * br : 0;
+    const flutter = breeze ? Math.sin(t * 4) * 0.4 * br : 0;
     ctx.strokeStyle = '#2a2417';
     ctx.lineWidth = 0.5;
     ctx.beginPath();
-    ctx.moveTo(0, -14.4);
-    ctx.lineTo(0, -19);
+    ctx.moveTo(0, -12);
+    ctx.lineTo(0, -16);
     ctx.stroke();
     ctx.fillStyle = '#c9342c';
     ctx.beginPath();
-    ctx.moveTo(0, -19);
-    ctx.lineTo(5 + flutter, -18.2);
-    ctx.lineTo(3, -17);
-    ctx.lineTo(5 - flutter, -16);
-    ctx.lineTo(0, -16.5);
+    ctx.moveTo(0, -16);
+    ctx.lineTo(4 + flutter, -15.4);
+    ctx.lineTo(2.6, -14.4);
+    ctx.lineTo(4 - flutter, -13.4);
+    ctx.lineTo(0, -14);
     ctx.closePath();
     ctx.fill();
     ctx.restore();
@@ -549,62 +555,60 @@
   }
 
   function modPeaks(ctx, t, br, blob, opts = {}) {
-    // 1–2 sharp gray peaks rising from the blob top.
-    const x = opts.x ?? 0;
-    const baseY = (opts.y ?? blob.topY) + 1;
-    const tall = opts.tall ?? 18;
-    const wide = opts.wide ?? 10;
-    const drawPeak = (px, ph, pw) => {
+    // Two sharp gray peaks rising from the surface anchor.
+    const a = opts.anchor || blob.surfaceAnchor;
+    const tall = opts.tall ?? 14;
+    const wide = opts.wide ?? 7;
+    const drawPeak = (px, py, ph, pw) => {
       ctx.beginPath();
-      ctx.moveTo(px - pw, baseY);
-      ctx.lineTo(px - pw * 0.2, baseY - ph);
-      ctx.lineTo(px + pw * 0.1, baseY - ph * 0.7);
-      ctx.lineTo(px + pw * 0.5, baseY - ph * 0.85);
-      ctx.lineTo(px + pw, baseY);
+      ctx.moveTo(px - pw, py);
+      ctx.lineTo(px - pw * 0.2, py - ph);
+      ctx.lineTo(px + pw * 0.1, py - ph * 0.7);
+      ctx.lineTo(px + pw * 0.5, py - ph * 0.85);
+      ctx.lineTo(px + pw, py);
       ctx.closePath();
-      const pg = ctx.createLinearGradient(px, baseY - ph, px, baseY);
+      const pg = ctx.createLinearGradient(px, py - ph, px, py);
       pg.addColorStop(0, '#9aa3a8');
       pg.addColorStop(1, '#5a635a');
       ctx.fillStyle = pg;
       ctx.fill();
       ctx.strokeStyle = '#2a2417';
-      ctx.lineWidth = 0.7;
+      ctx.lineWidth = 0.6;
       ctx.stroke();
       // Snow cap
       ctx.beginPath();
-      ctx.moveTo(px - pw * 0.32, baseY - ph * 0.74);
-      ctx.lineTo(px - pw * 0.18, baseY - ph);
-      ctx.lineTo(px + pw * 0.06, baseY - ph * 0.74);
+      ctx.moveTo(px - pw * 0.32, py - ph * 0.74);
+      ctx.lineTo(px - pw * 0.18, py - ph);
+      ctx.lineTo(px + pw * 0.06, py - ph * 0.74);
       ctx.closePath();
       ctx.fillStyle = '#f4ecd6';
       ctx.fill();
     };
-    drawPeak(x, tall, wide);
-    drawPeak(x + wide * 0.85, tall * 0.65, wide * 0.7);
+    drawPeak(a.x - 2, a.y, tall, wide);
+    drawPeak(a.x + 4, a.y, tall * 0.7, wide * 0.7);
   }
 
   function modWyvernPeak(ctx, t, br, blob, opts = {}) {
-    // A peak with a wyvern silhouette perched on it.
+    // A peak with a wyvern silhouette perched on it, anchored to the surface.
     const ember = opts.ember === true;
-    const x = opts.x ?? 0;
-    const baseY = blob.topY + 1;
+    const a = opts.anchor || blob.surfaceAnchor;
     // Peak
     ctx.beginPath();
-    ctx.moveTo(x - 9, baseY);
-    ctx.lineTo(x - 2, baseY - 16);
-    ctx.lineTo(x + 1, baseY - 9);
-    ctx.lineTo(x + 9, baseY);
+    ctx.moveTo(a.x - 7, a.y);
+    ctx.lineTo(a.x - 1.5, a.y - 12);
+    ctx.lineTo(a.x + 0.8, a.y - 7);
+    ctx.lineTo(a.x + 7, a.y);
     ctx.closePath();
-    const pg = ctx.createLinearGradient(x, baseY - 16, x, baseY);
+    const pg = ctx.createLinearGradient(a.x, a.y - 12, a.x, a.y);
     pg.addColorStop(0, '#6a5040');
     pg.addColorStop(1, '#3a2a22');
     ctx.fillStyle = pg;
     ctx.fill();
     ctx.strokeStyle = '#2a2417';
-    ctx.lineWidth = 0.7;
+    ctx.lineWidth = 0.6;
     ctx.stroke();
-    // Wyvern perched at -2, baseY - 16
-    const wx = x - 2, wy = baseY - 16;
+    // Wyvern perched at peak tip
+    const wx = a.x - 1.5, wy = a.y - 12;
     const flap = breeze ? Math.sin(t * 3.5) * 0.6 * br : 0;
     ctx.save();
     ctx.translate(wx, wy);
@@ -667,40 +671,70 @@
     ctx.restore();
   }
 
-  function modWingBanners(ctx, t, br, blob) {
-    // Wing-shaped banners on the upper sides of the blob. Sit above shoulder
-    // height so they don't clash with a fishing dock on the same shoulder.
-    const flap = breeze ? Math.sin(t * 2.4) * 0.18 * br : 0;
+  function modBellyWings(ctx, t, br, blob) {
+    // Big feathered wings sprouting from underneath the island, like the
+    // whole rock is a flying creature.
+    const flap = breeze ? Math.sin(t * 1.8) * 0.22 * br : 0;
     for (const side of [-1, 1]) {
-      const sh = side < 0 ? blob.leftShoulder : blob.rightShoulder;
       ctx.save();
-      ctx.translate(sh.x, sh.y - 10);
+      // Anchor on the lower-side of the blob
+      ctx.translate(blob.radius * 0.35 * side, blob.radius * 0.45);
       ctx.scale(side, 1);
-      ctx.rotate(-0.35 + flap);
-      // Wing feather shape
+      ctx.rotate(0.45 + flap);
+
+      const wingW = blob.radius * 1.05;
+      const wingH = blob.radius * 0.6;
+
+      // Wing membrane / feathered shape
       ctx.beginPath();
-      ctx.moveTo(0, 0);
-      ctx.quadraticCurveTo(8, -3, 14, -1);
-      ctx.quadraticCurveTo(11, 1, 8, 2);
-      ctx.quadraticCurveTo(4, 3, 0, 2);
+      ctx.moveTo(0, -2);
+      ctx.quadraticCurveTo(wingW * 0.35, -wingH * 0.35, wingW * 0.78, -wingH * 0.08);
+      ctx.lineTo(wingW * 0.95, wingH * 0.05);
+      // Scalloped trailing edge (primary feather tips)
+      const feathers = 6;
+      for (let i = 0; i < feathers; i++) {
+        const f0 = i / feathers;
+        const f1 = (i + 1) / feathers;
+        const peakX = wingW * (0.95 - f0 * 0.85);
+        const peakY = wingH * (0.05 + f0 * 0.5);
+        const valleyX = wingW * (0.95 - f1 * 0.85);
+        const valleyY = wingH * (0.05 + f1 * 0.5);
+        ctx.quadraticCurveTo(
+          peakX - wingW * 0.04, peakY + wingH * 0.16,
+          valleyX, valleyY
+        );
+      }
+      ctx.lineTo(wingW * 0.12, wingH * 0.35);
+      ctx.quadraticCurveTo(wingW * 0.04, wingH * 0.15, 0, -2);
       ctx.closePath();
-      ctx.fillStyle = '#f4ecd6';
+
+      const wg = ctx.createLinearGradient(0, -wingH * 0.4, wingW * 0.5, wingH * 0.5);
+      wg.addColorStop(0, '#fefdf6');
+      wg.addColorStop(0.5, '#e8e2cc');
+      wg.addColorStop(1, '#9ea58e');
+      ctx.fillStyle = wg;
       ctx.fill();
       ctx.strokeStyle = '#2a2417';
       ctx.lineWidth = 0.6;
       ctx.stroke();
-      // Feather lines
-      ctx.strokeStyle = 'rgba(40,30,20,0.45)';
-      ctx.lineWidth = 0.35;
-      for (const fx of [4, 7, 10, 12]) {
+
+      // Feather shafts radiating from the shoulder
+      ctx.strokeStyle = 'rgba(60,45,25,0.55)';
+      ctx.lineWidth = 0.4;
+      for (let i = 0; i < 6; i++) {
+        const f = i / 5;
+        const tipX = wingW * (0.2 + f * 0.7);
+        const tipY = wingH * (0.05 + f * 0.45);
         ctx.beginPath();
-        ctx.moveTo(fx * 0.5, 0.5);
-        ctx.lineTo(fx, 2);
+        ctx.moveTo(wingW * 0.05, -wingH * 0.05);
+        ctx.quadraticCurveTo(tipX * 0.55, tipY * 0.4, tipX, tipY);
         ctx.stroke();
       }
-      // Anchor post
-      ctx.fillStyle = '#5a3a20';
-      ctx.fillRect(-0.8, -1, 1.6, 4);
+      // Shoulder bone shading
+      ctx.fillStyle = 'rgba(60,45,25,0.35)';
+      ctx.beginPath();
+      ctx.ellipse(wingW * 0.06, -wingH * 0.05, 2.4, 1.4, 0.3, 0, Math.PI * 2);
+      ctx.fill();
       ctx.restore();
     }
   }
@@ -736,172 +770,247 @@
   }
 
   function modMine(ctx, t, br, blob, opts = {}) {
-    // Mine adit cut into one side of the blob, with timber frame + ore heap.
+    // Mine adit with timber frame, hanging lantern, rails coming out, a
+    // minecart full of ore, and an ore tailings heap.
     const side = opts.side ?? -1;
     const sh = side < 0 ? blob.leftShoulder : blob.rightShoulder;
     ctx.save();
-    ctx.translate(sh.x, sh.y + 6);
+    ctx.translate(sh.x, sh.y + 7);
     ctx.scale(side, 1);
-    // Dark interior
-    ctx.fillStyle = '#1a120a';
-    ctx.beginPath();
-    ctx.moveTo(-5, 0);
-    ctx.lineTo(-5, -5);
-    ctx.quadraticCurveTo(-2.5, -8, 0, -5);
-    ctx.lineTo(0, 0);
-    ctx.closePath();
-    ctx.fill();
-    // Timber frame
-    ctx.strokeStyle = '#5a3a20';
-    ctx.lineWidth = 1.2;
-    ctx.beginPath();
-    ctx.moveTo(-5.2, 0);
-    ctx.lineTo(-5.2, -5);
-    ctx.quadraticCurveTo(-2.5, -8.2, 0.2, -5);
-    ctx.lineTo(0.2, 0);
-    ctx.stroke();
-    // Cross-beam
-    ctx.beginPath();
-    ctx.moveTo(-5.6, -5);
-    ctx.lineTo(0.6, -5);
-    ctx.stroke();
-    // Ore tailings — small heap of brown rocks
-    ctx.fillStyle = '#6a4a30';
-    ctx.beginPath();
-    ctx.ellipse(2, 1, 4, 1.4, 0, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.strokeStyle = '#3a2418';
-    ctx.lineWidth = 0.35;
-    ctx.stroke();
-    // Bits of ore (yellow/orange dots)
-    ctx.fillStyle = '#d9a040';
-    for (const [dx, dy] of [[0.5, 0.5], [2, 0.2], [3.5, 1], [1.5, 1.2]]) {
-      ctx.beginPath();
-      ctx.arc(dx, dy, 0.4, 0, Math.PI * 2);
-      ctx.fill();
-    }
-    // Tiny lantern glow inside
+    // Lantern glow halo (behind everything)
     if (br > 0.05) {
-      const glow = ctx.createRadialGradient(-2.5, -3.5, 0, -2.5, -3.5, 3);
-      glow.addColorStop(0, `rgba(255,200,110,${0.55 * br})`);
+      const glow = ctx.createRadialGradient(-3.5, -4.5, 0, -3.5, -4.5, 7);
+      glow.addColorStop(0, `rgba(255,200,110,${0.7 * br})`);
       glow.addColorStop(1, 'rgba(255,200,110,0)');
       ctx.fillStyle = glow;
       ctx.beginPath();
-      ctx.arc(-2.5, -3.5, 3, 0, Math.PI * 2);
+      ctx.arc(-3.5, -4.5, 7, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    // Dark interior (bigger adit)
+    ctx.fillStyle = '#0a0805';
+    ctx.beginPath();
+    ctx.moveTo(-7, 0.5);
+    ctx.lineTo(-7, -6);
+    ctx.quadraticCurveTo(-3.5, -10, 0, -6);
+    ctx.lineTo(0, 0.5);
+    ctx.closePath();
+    ctx.fill();
+    // Thicker timber frame
+    ctx.strokeStyle = '#6b4423';
+    ctx.lineWidth = 1.8;
+    ctx.beginPath();
+    ctx.moveTo(-7.2, 0.5);
+    ctx.lineTo(-7.2, -6);
+    ctx.quadraticCurveTo(-3.5, -10.2, 0.2, -6);
+    ctx.lineTo(0.2, 0.5);
+    ctx.stroke();
+    // Cross-beam (header)
+    ctx.beginPath();
+    ctx.moveTo(-7.6, -6);
+    ctx.lineTo(0.6, -6);
+    ctx.lineWidth = 1.6;
+    ctx.stroke();
+    // Plank/grain marks
+    ctx.strokeStyle = 'rgba(40,25,10,0.6)';
+    ctx.lineWidth = 0.4;
+    for (let dy = -1; dy >= -5; dy -= 1.6) {
+      ctx.beginPath();
+      ctx.moveTo(-7.6, dy);
+      ctx.lineTo(-6.6, dy);
+      ctx.moveTo(-0.4, dy);
+      ctx.lineTo(0.6, dy);
+      ctx.stroke();
+    }
+    // Hanging lantern inside
+    ctx.strokeStyle = '#2a1410';
+    ctx.lineWidth = 0.4;
+    ctx.beginPath();
+    ctx.moveTo(-3.5, -6);
+    ctx.lineTo(-3.5, -5);
+    ctx.stroke();
+    ctx.fillStyle = '#ffd048';
+    ctx.beginPath();
+    ctx.arc(-3.5, -4.2, 1.1, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.strokeStyle = '#2a1410';
+    ctx.lineWidth = 0.4;
+    ctx.stroke();
+    // Rails coming out
+    ctx.strokeStyle = '#3a2818';
+    ctx.lineWidth = 0.5;
+    ctx.beginPath();
+    ctx.moveTo(-6, 0.5); ctx.lineTo(7, 1);
+    ctx.moveTo(-6, 1.5); ctx.lineTo(7, 2);
+    ctx.stroke();
+    // Rail ties
+    ctx.fillStyle = '#3a2818';
+    for (let dx = -5; dx < 7; dx += 1.6) {
+      ctx.fillRect(dx, 0.3, 0.4, 1.6);
+    }
+    // Minecart
+    ctx.fillStyle = '#7a3a2a';
+    ctx.fillRect(2, -3.5, 4.5, 3.5);
+    ctx.strokeStyle = '#2a1410';
+    ctx.lineWidth = 0.5;
+    ctx.strokeRect(2, -3.5, 4.5, 3.5);
+    // Ore in cart
+    ctx.fillStyle = '#caa46a';
+    ctx.beginPath();
+    ctx.arc(3, -3.4, 0.7, 0, Math.PI * 2);
+    ctx.arc(4.5, -3.7, 0.8, 0, Math.PI * 2);
+    ctx.arc(5.6, -3.4, 0.6, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = '#e6b03a';
+    ctx.beginPath();
+    ctx.arc(3.5, -3.6, 0.3, 0, Math.PI * 2);
+    ctx.arc(5, -3.9, 0.3, 0, Math.PI * 2);
+    ctx.fill();
+    // Wheels
+    ctx.fillStyle = '#1a1208';
+    ctx.beginPath();
+    ctx.arc(3, 0.5, 0.9, 0, Math.PI * 2);
+    ctx.arc(5.5, 0.5, 0.9, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = '#5a4030';
+    ctx.beginPath();
+    ctx.arc(3, 0.5, 0.3, 0, Math.PI * 2);
+    ctx.arc(5.5, 0.5, 0.3, 0, Math.PI * 2);
+    ctx.fill();
+    // Tailings heap further out
+    ctx.fillStyle = '#6a4a30';
+    ctx.beginPath();
+    ctx.ellipse(9.5, 2, 3.6, 1.6, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.strokeStyle = '#3a2418';
+    ctx.lineWidth = 0.4;
+    ctx.stroke();
+    // Bright ore chunks on the heap
+    ctx.fillStyle = '#e6b03a';
+    for (const [dx, dy] of [[8.4, 1.4], [9.6, 1.2], [10.6, 1.8], [9.2, 2.4]]) {
+      ctx.beginPath();
+      ctx.arc(dx, dy, 0.55, 0, Math.PI * 2);
       ctx.fill();
     }
     ctx.restore();
   }
 
   function modSeashellTower(ctx, t, br, blob, opts = {}) {
-    // Spiraled conch tower on top of the blob.
-    const x = opts.x ?? 0;
-    const baseY = (opts.y ?? blob.topY) + 2;
+    // Architectural tower with horizontal shell-like spiral bands.
+    // Anchored on the surface so it sits within the silhouette.
+    const a = opts.anchor || blob.surfaceAnchor;
     ctx.save();
-    ctx.translate(x, baseY);
-    // Conch outline — tall cone with curling tip
+    ctx.translate(a.x, a.y);
+    // Tapered body — straight tower lines, not organic curves
     ctx.beginPath();
-    ctx.moveTo(-5, 0);
-    ctx.quadraticCurveTo(-4, -8, -2, -12);
-    ctx.quadraticCurveTo(-1, -16, 1, -16);
-    ctx.quadraticCurveTo(3, -16, 2, -12);
-    ctx.quadraticCurveTo(4, -8, 5, 0);
+    ctx.moveTo(-4, 0);
+    ctx.lineTo(-2.4, -13);
+    ctx.lineTo(2.4, -13);
+    ctx.lineTo(4, 0);
     ctx.closePath();
-    const cg = ctx.createLinearGradient(-5, 0, 5, -16);
-    cg.addColorStop(0, '#f4d6a8');
-    cg.addColorStop(0.5, '#e6b07a');
-    cg.addColorStop(1, '#caa46a');
-    ctx.fillStyle = cg;
+    const tg = ctx.createLinearGradient(-4, 0, 4, 0);
+    tg.addColorStop(0, '#caa46a');
+    tg.addColorStop(0.5, '#f4d6a8');
+    tg.addColorStop(1, '#caa46a');
+    ctx.fillStyle = tg;
     ctx.fill();
     ctx.strokeStyle = '#3a2418';
-    ctx.lineWidth = 0.7;
+    ctx.lineWidth = 0.6;
     ctx.stroke();
-    // Spiral seams
-    ctx.strokeStyle = 'rgba(80,40,20,0.55)';
-    ctx.lineWidth = 0.4;
-    for (let i = 0; i < 5; i++) {
-      const yy = -2 - i * 2.4;
-      const xr = 4 - i * 0.6;
+    // Spiral shell bands — horizontal curves wrapping the tower
+    ctx.strokeStyle = 'rgba(80,40,20,0.65)';
+    ctx.lineWidth = 0.5;
+    for (let i = 1; i <= 4; i++) {
+      const y = -i * 2.6;
+      const xR = 4 - (i / 4) * 1.6;
       ctx.beginPath();
-      ctx.moveTo(-xr, yy);
-      ctx.quadraticCurveTo(0, yy + 1.1, xr, yy);
+      ctx.moveTo(-xR, y);
+      ctx.quadraticCurveTo(0, y + 0.5, xR, y);
+      ctx.stroke();
+      // Tiny tick mark on one side suggests the spiral wrap continuation
+      ctx.beginPath();
+      ctx.moveTo(xR, y);
+      ctx.lineTo(xR - 0.6, y + 0.6);
       ctx.stroke();
     }
-    // Curl at top
+    // Conical roof
     ctx.beginPath();
-    ctx.arc(0.5, -15, 1.2, 0, Math.PI * 2);
-    ctx.fillStyle = '#caa46a';
+    ctx.moveTo(-2.8, -13);
+    ctx.lineTo(0, -18);
+    ctx.lineTo(2.8, -13);
+    ctx.closePath();
+    ctx.fillStyle = '#9a4438';
     ctx.fill();
-    ctx.strokeStyle = '#3a2418';
+    ctx.strokeStyle = '#2a1410';
     ctx.lineWidth = 0.5;
     ctx.stroke();
-    // Tiny doorway at base
+    // Finial pearl
+    ctx.fillStyle = '#f4d6a8';
+    ctx.beginPath();
+    ctx.arc(0, -18.4, 0.7, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.strokeStyle = '#3a2418';
+    ctx.lineWidth = 0.4;
+    ctx.stroke();
+    // Door at base
     ctx.fillStyle = '#2a1f12';
     ctx.beginPath();
-    ctx.moveTo(-0.9, 0);
-    ctx.lineTo(-0.9, -2);
-    ctx.quadraticCurveTo(0, -2.8, 0.9, -2);
-    ctx.lineTo(0.9, 0);
+    ctx.moveTo(-1, 0);
+    ctx.lineTo(-1, -2.2);
+    ctx.quadraticCurveTo(0, -3, 1, -2.2);
+    ctx.lineTo(1, 0);
     ctx.closePath();
-    ctx.fill();
-    // Pink/coral mouth shading
-    ctx.fillStyle = 'rgba(220,140,150,0.5)';
-    ctx.beginPath();
-    ctx.ellipse(0, -0.5, 3, 1.2, 0, 0, Math.PI * 2);
     ctx.fill();
     ctx.restore();
   }
 
   function modVolcano(ctx, t, br, blob, opts = {}) {
-    // Cone + smoke plume + lava-glow rim. (Blob is recolored elsewhere.)
-    const x = opts.x ?? 0;
-    const baseY = blob.topY + 1;
+    // Cone + smoke plume + lava-glow rim, anchored to the surface.
+    const a = opts.anchor || blob.surfaceAnchor;
     const scale = opts.scale ?? 1;
     ctx.save();
-    ctx.translate(x, baseY);
+    ctx.translate(a.x, a.y);
     ctx.scale(scale, scale);
     // Cone
     ctx.beginPath();
-    ctx.moveTo(-10, 0);
-    ctx.lineTo(-3, -12);
-    ctx.lineTo(3, -12);
-    ctx.lineTo(10, 0);
+    ctx.moveTo(-8, 0);
+    ctx.lineTo(-2.5, -10);
+    ctx.lineTo(2.5, -10);
+    ctx.lineTo(8, 0);
     ctx.closePath();
-    const cg = ctx.createLinearGradient(0, -12, 0, 0);
+    const cg = ctx.createLinearGradient(0, -10, 0, 0);
     cg.addColorStop(0, '#3a2a22');
     cg.addColorStop(1, '#1a120a');
     ctx.fillStyle = cg;
     ctx.fill();
     ctx.strokeStyle = '#1a0c08';
-    ctx.lineWidth = 0.7;
+    ctx.lineWidth = 0.6;
     ctx.stroke();
     // Crater rim
     ctx.fillStyle = '#ff7a30';
     ctx.beginPath();
-    ctx.ellipse(0, -12, 3, 1, 0, 0, Math.PI * 2);
+    ctx.ellipse(0, -10, 2.5, 0.9, 0, 0, Math.PI * 2);
     ctx.fill();
     ctx.fillStyle = '#ffd048';
     ctx.beginPath();
-    ctx.ellipse(0, -12, 1.6, 0.6, 0, 0, Math.PI * 2);
+    ctx.ellipse(0, -10, 1.4, 0.5, 0, 0, Math.PI * 2);
     ctx.fill();
-    // Lava drips down the side
+    // Lava drips
     ctx.strokeStyle = '#ff5020';
-    ctx.lineWidth = 0.6;
+    ctx.lineWidth = 0.5;
     ctx.beginPath();
-    ctx.moveTo(-1, -11);
-    ctx.lineTo(-3, -4);
-    ctx.moveTo(2, -11);
-    ctx.lineTo(4, -3);
+    ctx.moveTo(-1, -9.5); ctx.lineTo(-2.5, -3.5);
+    ctx.moveTo(1.4, -9.5); ctx.lineTo(3, -3);
     ctx.stroke();
-    // Smoke plume — three rising puffs offset by time
+    // Smoke plume
     if (br > 0.05) {
       ctx.save();
       ctx.globalAlpha = 0.55 * br;
       for (let i = 0; i < 3; i++) {
         const ph = (t * 0.6 + i / 3) % 1;
-        const py = -12 - ph * 22;
-        const pr = 1.6 + ph * 3.6;
-        const px = Math.sin((ph + i) * 4) * 1.6;
+        const py = -10 - ph * 18;
+        const pr = 1.4 + ph * 3;
+        const px = Math.sin((ph + i) * 4) * 1.4;
         ctx.fillStyle = `rgba(60,55,55,${0.7 - ph * 0.5})`;
         ctx.beginPath();
         ctx.arc(px, py, pr, 0, Math.PI * 2);
@@ -913,202 +1022,349 @@
   }
 
   function modOvergrown(ctx, t, br, blob, opts = {}) {
-    // Twisted trees + thorny vines along the rim + dead red flowers.
+    // Dense overgrown cluster — a tight grove of skeletal trees with
+    // brambles wrapping them and a cluster of dead red flowers around the
+    // base. Concentrated, not spread along the rim.
+    const a = opts.anchor || blob.surfaceAnchor;
     const seed = opts.seed ?? 7;
     const r = makeRng(seed + 31);
-    const sway = breeze ? Math.sin(t * 1.6) * 0.05 * br : 0;
-    // Three trees scattered along the top edge
+    const sway = breeze ? Math.sin(t * 1.2) * 0.05 * br : 0;
+    // Cluster of 5 twisted dead trees, tightly packed near the surface anchor
     const trees = [
-      { x: -22, h: 14 },
-      { x: -6,  h: 18 },
-      { x: 18,  h: 12 },
+      { dx: -7,  dy:  3,  h: 12, lean:  0.4 },
+      { dx: -2,  dy:  1,  h: 17, lean: -0.3 },
+      { dx:  3,  dy:  2,  h: 14, lean:  0.2 },
+      { dx:  8,  dy:  4,  h: 11, lean: -0.4 },
+      { dx:  0,  dy:  5,  h:  9, lean:  0.1 },
     ];
     for (const tr of trees) {
       ctx.save();
-      ctx.translate(tr.x, blob.topY + 4);
-      ctx.rotate(sway + (r() - 0.5) * 0.15);
-      // Twisted trunk
-      ctx.strokeStyle = '#3a2410';
-      ctx.lineWidth = 1.4;
+      ctx.translate(a.x + tr.dx, a.y + tr.dy);
+      ctx.rotate(sway + tr.lean * 0.2 + (r() - 0.5) * 0.1);
+      // Gnarled black trunk
+      ctx.strokeStyle = '#0e0a06';
+      ctx.lineWidth = 1.3;
       ctx.lineCap = 'round';
       ctx.beginPath();
       ctx.moveTo(0, 0);
-      ctx.quadraticCurveTo(2, -tr.h * 0.5, -1, -tr.h);
+      ctx.quadraticCurveTo(1.6, -tr.h * 0.4, -1.2, -tr.h * 0.7);
+      ctx.quadraticCurveTo(-2.4, -tr.h * 0.95, 0.4, -tr.h);
       ctx.stroke();
-      // Two side branches
-      ctx.lineWidth = 0.7;
-      ctx.beginPath();
-      ctx.moveTo(1, -tr.h * 0.5);
-      ctx.lineTo(5, -tr.h * 0.7);
-      ctx.moveTo(-0.5, -tr.h * 0.75);
-      ctx.lineTo(-5, -tr.h * 0.85);
-      ctx.stroke();
-      // Sparse leaves — dark gnarled
-      ctx.fillStyle = '#2a3a20';
-      for (const [lx, ly] of [[-1, -tr.h], [-5, -tr.h * 0.85], [5, -tr.h * 0.7]]) {
+      // Skeletal branches — short, sharp, asymmetric
+      ctx.lineWidth = 0.6;
+      const branches = [
+        [0.5, -tr.h * 0.45, -1.2, -tr.h * 0.4 - 2.6],
+        [-0.6, -tr.h * 0.6,  2.5, -tr.h * 0.55],
+        [-0.9, -tr.h * 0.78, -3,  -tr.h * 0.85],
+        [0.2, -tr.h * 0.9,   2.2, -tr.h * 1.02],
+      ];
+      for (const [x1, y1, x2, y2] of branches) {
         ctx.beginPath();
-        ctx.ellipse(lx, ly, 2.6, 1.6, 0, 0, Math.PI * 2);
+        ctx.moveTo(x1, y1);
+        ctx.quadraticCurveTo((x1 + x2) / 2 - 0.5, (y1 + y2) / 2, x2, y2);
+        // Thorn off the branch
+        const tx = (x1 + x2) / 2;
+        const ty = (y1 + y2) / 2;
+        ctx.moveTo(tx, ty);
+        ctx.lineTo(tx + (x2 < x1 ? -0.9 : 0.9), ty - 0.6);
+        ctx.stroke();
+      }
+      // Very sparse dark leaves
+      ctx.fillStyle = '#1c2818';
+      for (let i = 0; i < 2; i++) {
+        const lx = (r() - 0.5) * 4.5;
+        const ly = -tr.h * (0.7 + r() * 0.3);
+        ctx.beginPath();
+        ctx.ellipse(lx, ly, 1.4, 0.7, r() * Math.PI, 0, Math.PI * 2);
         ctx.fill();
       }
       ctx.restore();
     }
-    // Thorny vines along the upper-front rim — short spiky strokes
+    // Brambles ringing the cluster base — curved strokes with thorn barbs
     ctx.save();
-    ctx.strokeStyle = '#2a3a20';
+    ctx.translate(a.x, a.y);
+    ctx.strokeStyle = '#2a2018';
     ctx.lineWidth = 0.7;
-    for (let i = 0; i < 14; i++) {
-      const ang = -Math.PI + i * (Math.PI / 13);
-      const rx = Math.cos(ang) * blob.radius * 0.95;
-      const ry = Math.sin(ang) * blob.radius * 0.85;
+    for (let i = 0; i < 16; i++) {
+      const ang = (i / 16) * Math.PI * 2;
+      const r1 = 5 + r() * 2;
+      const r2 = r1 + 2.5 + r() * 1.5;
+      const yBias = 3; // sit around the lower half of the cluster
+      const x1 = Math.cos(ang) * r1;
+      const y1 = Math.sin(ang) * r1 * 0.65 + yBias;
+      const x2 = Math.cos(ang) * r2;
+      const y2 = Math.sin(ang) * r2 * 0.65 + yBias;
       ctx.beginPath();
-      ctx.moveTo(rx, ry);
-      ctx.lineTo(rx + Math.cos(ang) * 4, ry + Math.sin(ang) * 4);
-      // Thorn barbs
-      ctx.moveTo(rx + Math.cos(ang) * 2, ry + Math.sin(ang) * 2);
-      ctx.lineTo(rx + Math.cos(ang) * 2 + 1.4, ry + Math.sin(ang) * 2 + 0.6);
+      ctx.moveTo(x1, y1);
+      ctx.quadraticCurveTo(
+        (x1 + x2) / 2 + (r() - 0.5) * 1.6,
+        (y1 + y2) / 2 + (r() - 0.5) * 1.6,
+        x2, y2
+      );
+      ctx.stroke();
+      // Thorn barb
+      const mx = (x1 + x2) / 2;
+      const my = (y1 + y2) / 2;
+      ctx.beginPath();
+      ctx.moveTo(mx, my);
+      ctx.lineTo(mx + Math.cos(ang) * 1.4, my + Math.sin(ang) * 1.4 - 0.4);
       ctx.stroke();
     }
     ctx.restore();
-    // Dead flowers — red dots
-    ctx.fillStyle = '#a82838';
-    for (const [fx, fy] of [[-14, blob.topY + 2], [4, blob.topY + 2], [22, blob.topY + 4]]) {
+    // Cluster of dead red flowers at the base
+    for (const [dx, dy] of [[-5, 6], [-1, 7], [3, 6.5], [6, 7], [9, 6]]) {
+      const fx = a.x + dx, fy = a.y + dy;
+      ctx.fillStyle = '#a82838';
       ctx.beginPath();
-      ctx.arc(fx, fy, 0.9, 0, Math.PI * 2);
+      ctx.arc(fx, fy, 1.0, 0, Math.PI * 2);
       ctx.fill();
+      // Dark center
+      ctx.fillStyle = '#3a1418';
+      ctx.beginPath();
+      ctx.arc(fx, fy, 0.35, 0, Math.PI * 2);
+      ctx.fill();
+      // Tiny stem
+      ctx.strokeStyle = '#2a2018';
+      ctx.lineWidth = 0.4;
+      ctx.beginPath();
+      ctx.moveTo(fx, fy + 1);
+      ctx.lineTo(fx, fy + 2.4);
+      ctx.stroke();
     }
   }
 
-  function modSword(ctx, t, br, blob, opts = {}) {
-    // Sword stuck in a stone, with a small banner.
-    const x = opts.x ?? 0;
-    const baseY = blob.topY + 2;
+  function modWarBanner(ctx, t, br, blob, opts = {}) {
+    // Heraldic standard — pole with a rectangular banner bearing crossed
+    // swords. Reads as martial without looking like a flag on a pin.
+    const a = opts.anchor || blob.surfaceAnchor;
     ctx.save();
-    ctx.translate(x, baseY);
-    // Stone pedestal
+    ctx.translate(a.x, a.y);
+    // Stone footing
     ctx.fillStyle = '#7a7568';
-    ctx.beginPath();
-    ctx.ellipse(0, 0, 5, 1.6, 0, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.fillRect(-5, -1.4, 10, 1.4);
-    ctx.strokeStyle = '#2a2417';
-    ctx.lineWidth = 0.6;
-    ctx.beginPath();
-    ctx.moveTo(-5, -1.4);
-    ctx.lineTo(5, -1.4);
-    ctx.stroke();
-    // Blade
-    ctx.beginPath();
-    ctx.moveTo(0, -1);
-    ctx.lineTo(-1, -14);
-    ctx.lineTo(0, -15);
-    ctx.lineTo(1, -14);
-    ctx.lineTo(0, -1);
-    ctx.closePath();
-    const bg = ctx.createLinearGradient(-1, -14, 1, -14);
-    bg.addColorStop(0, '#cfd6dc');
-    bg.addColorStop(0.5, '#f4f6f8');
-    bg.addColorStop(1, '#9aa3a8');
-    ctx.fillStyle = bg;
-    ctx.fill();
+    ctx.fillRect(-3, -1, 6, 2);
     ctx.strokeStyle = '#2a2417';
     ctx.lineWidth = 0.5;
-    ctx.stroke();
-    // Crossguard
-    ctx.fillStyle = '#caa46a';
-    ctx.fillRect(-3, -2, 6, 1.2);
-    ctx.strokeRect(-3, -2, 6, 1.2);
-    // Grip
-    ctx.fillStyle = '#5a3a20';
-    ctx.fillRect(-0.7, -0.8, 1.4, 1.6);
-    // Pommel — on top, since blade points up; this looks like grip below blade.
-    // Banner clipped to the blade — flutters
-    const flutter = breeze ? Math.sin(t * 3.4) * 0.5 * br : 0;
-    ctx.fillStyle = '#c9342c';
+    ctx.strokeRect(-3, -1, 6, 2);
+    // Stone block detail
     ctx.beginPath();
-    ctx.moveTo(1, -12);
-    ctx.lineTo(6 + flutter, -11);
-    ctx.lineTo(4, -9.4);
-    ctx.lineTo(6 - flutter, -7.8);
-    ctx.lineTo(1, -8.6);
+    ctx.moveTo(0, -1);
+    ctx.lineTo(0, 1);
+    ctx.stroke();
+    // Pole
+    ctx.strokeStyle = '#3a2a18';
+    ctx.lineWidth = 1.3;
+    ctx.lineCap = 'round';
+    ctx.beginPath();
+    ctx.moveTo(0, -1);
+    ctx.lineTo(0, -15);
+    ctx.stroke();
+    // Spear-tip finial
+    ctx.fillStyle = '#cfd6dc';
+    ctx.beginPath();
+    ctx.moveTo(0, -17);
+    ctx.lineTo(-0.8, -15);
+    ctx.lineTo(0.8, -15);
     ctx.closePath();
     ctx.fill();
     ctx.strokeStyle = '#2a2417';
     ctx.lineWidth = 0.4;
     ctx.stroke();
+    // Crossbeam the banner hangs from
+    ctx.strokeStyle = '#3a2a18';
+    ctx.lineWidth = 0.9;
+    ctx.beginPath();
+    ctx.moveTo(-0.5, -13);
+    ctx.lineTo(7, -13);
+    ctx.stroke();
+    // Rectangular banner, bottom hem flutters slightly
+    const flutter = breeze ? Math.sin(t * 3) * 0.4 * br : 0;
+    ctx.fillStyle = '#7a2018';
+    ctx.beginPath();
+    ctx.moveTo(0, -13);
+    ctx.lineTo(7, -13);
+    ctx.lineTo(7, -6.5);
+    ctx.lineTo(5 + flutter, -5.4);
+    ctx.lineTo(2 - flutter * 0.5, -6.4);
+    ctx.lineTo(0, -5.8);
+    ctx.closePath();
+    ctx.fill();
+    ctx.strokeStyle = '#3a0a08';
+    ctx.lineWidth = 0.4;
+    ctx.stroke();
+    // Gold trim along top
+    ctx.strokeStyle = '#e6b03a';
+    ctx.lineWidth = 0.5;
+    ctx.beginPath();
+    ctx.moveTo(0.4, -12.2);
+    ctx.lineTo(6.6, -12.2);
+    ctx.stroke();
+    // Crossed swords emblem
+    ctx.strokeStyle = '#f0e8d0';
+    ctx.lineWidth = 0.8;
+    ctx.lineCap = 'round';
+    ctx.beginPath();
+    ctx.moveTo(1.6, -11); ctx.lineTo(5.4, -7.6);
+    ctx.moveTo(5.4, -11); ctx.lineTo(1.6, -7.6);
+    ctx.stroke();
+    // Sword pommels (small dots at hilt ends)
+    ctx.fillStyle = '#e6b03a';
+    ctx.beginPath();
+    ctx.arc(1.6, -11, 0.5, 0, Math.PI * 2);
+    ctx.arc(5.4, -11, 0.5, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
+  }
+
+  function modLighthouse(ctx, t, br, blob, opts = {}) {
+    // From the kid's sketch: a tall thin striped tower with a pointed top
+    // and fixed beam lines radiating outward (plus a soft sweeping beam).
+    const a = opts.anchor || blob.surfaceAnchor;
+    ctx.save();
+    ctx.translate(a.x, a.y);
+    // Narrow base block
+    ctx.fillStyle = '#d8d3c0';
+    ctx.fillRect(-2.6, -1, 5.2, 1.6);
+    ctx.strokeStyle = '#2a2417';
+    ctx.lineWidth = 0.5;
+    ctx.strokeRect(-2.6, -1, 5.2, 1.6);
+    // Tower shaft — alternating red/white stripes
+    const tw = 3.6, th = 17;
+    const stripes = 6;
+    for (let i = 0; i < stripes; i++) {
+      const y = -1 - (i + 1) * (th / stripes);
+      ctx.fillStyle = (i % 2 === 0) ? '#c9342c' : '#f4ecd6';
+      ctx.fillRect(-tw / 2, y, tw, th / stripes + 0.3);
+    }
+    ctx.strokeStyle = '#2a2417';
+    ctx.lineWidth = 0.5;
+    ctx.strokeRect(-tw / 2, -1 - th, tw, th);
+    // Lamp housing — small box at the top of the shaft
+    const lampY = -1 - th;
+    ctx.fillStyle = '#f8e89a';
+    ctx.fillRect(-tw / 2 + 0.2, lampY - 2.2, tw - 0.4, 2.2);
+    ctx.strokeStyle = '#2a2417';
+    ctx.lineWidth = 0.5;
+    ctx.strokeRect(-tw / 2 + 0.2, lampY - 2.2, tw - 0.4, 2.2);
+    // Pointed top (matches the sketch — pointed, not domed)
+    ctx.fillStyle = '#3a3022';
+    ctx.beginPath();
+    ctx.moveTo(-tw / 2 - 0.2, lampY - 2.2);
+    ctx.lineTo(0, lampY - 6);
+    ctx.lineTo(tw / 2 + 0.2, lampY - 2.2);
+    ctx.closePath();
+    ctx.fill();
+    ctx.stroke();
+    // Lamp center (bright dot inside housing)
+    ctx.fillStyle = '#fff4a8';
+    ctx.beginPath();
+    ctx.arc(0, lampY - 1.1, 0.7, 0, Math.PI * 2);
+    ctx.fill();
+    // Fixed radiating beam lines, matching the sketch — five rays fanning
+    // out from the lamp, brightness pulses gently.
+    if (br > 0.05) {
+      const pulse = 0.55 + 0.45 * (0.5 + 0.5 * Math.sin(t * 2));
+      ctx.strokeStyle = `rgba(255,232,140,${0.75 * br * pulse})`;
+      ctx.lineWidth = 0.7;
+      ctx.lineCap = 'round';
+      const cx = 0, cy = lampY - 1.1;
+      const rays = [
+        [-1.4, 0],   // left horizontal
+        [-1.0, -0.7], // upper-left
+        [0,    -1],  // straight up
+        [1.0,  -0.7], // upper-right
+        [1.4,  0],   // right horizontal
+      ];
+      for (const [dx, dy] of rays) {
+        const len = 10;
+        ctx.beginPath();
+        ctx.moveTo(cx + dx * 2, cy + dy * 2);
+        ctx.lineTo(cx + dx * len, cy + dy * len);
+        ctx.stroke();
+      }
+      // Soft halo around the lamp
+      const glow = ctx.createRadialGradient(cx, cy, 0, cx, cy, 6);
+      glow.addColorStop(0, `rgba(255,232,140,${0.55 * br * pulse})`);
+      glow.addColorStop(1, 'rgba(255,232,140,0)');
+      ctx.fillStyle = glow;
+      ctx.beginPath();
+      ctx.arc(cx, cy, 6, 0, Math.PI * 2);
+      ctx.fill();
+    }
     ctx.restore();
   }
 
   // ---------- Master draw function for name-modifier cards ----------
-  // Sorts mods into slots, draws aura (under), blob, then everything on top.
-  const MODIFIER_SLOT = {
-    keep: 'top', crest: 'top',
-    spire: 'top', watch: 'top',
-    asha: 'top-volcano',
-    wyn: 'top-wyvern', pyre: 'top-wyvern',
-    crag: 'top-peaks', reach: 'top-peaks',
-    helm: 'top', mel: 'top',
-    glen: 'side-mine', dell: 'side-mine',
-    tide: 'side-dock',
-    hollow: 'peri', thorn: 'peri',
-    sol: 'aura-sun',
-    wing: 'wings', aer: 'wings',
-  };
-
+  // Draws auras under the blob, then the blob itself, then surface- and
+  // side-anchored modifiers. Top-anchored modifiers sit at blob.surfaceAnchor
+  // (the upper-left "deck spot" where the highlight used to be).
   function drawNamedIsland(ctx, t, br, seed, mods) {
     mods = mods || [];
-    const slots = mods.map(m => ({ mod: m, slot: MODIFIER_SLOT[m] || 'top' }));
-    const has = s => slots.some(x => x.slot === s);
-    const hasMod = m => mods.includes(m);
-    const volcanic = mods.includes('asha');
+    const has = m => mods.includes(m);
+    const volcanic = has('asha');
 
-    // Aura behind / under the blob
-    if (has('aura-sun') || hasMod('tide')) {
-      // Stub blob ref for the aura functions (we haven't drawn it yet, but
-      // they only need radius, bottomY, topY — easy to provide).
-      const stub = {
-        radius: 36, topY: -30, bottomY: 34,
-        leftShoulder: { x: -27, y: -5 }, rightShoulder: { x: 27, y: -5 },
-      };
-      if (has('aura-sun')) modSunHalo(ctx, t, br, stub);
-      if (hasMod('tide'))  modWetSheen(ctx, t, br, stub);
-    }
+    // Sol + spire/watch promotes to a lighthouse (kid's request).
+    const lighthouseCombo = has('sol') && (has('spire') || has('watch'));
 
-    // The blob itself (volcanic recolors)
-    const blob = drawBlob(ctx, t, br, { seed, volcanic });
+    // A "top-anchored" modifier replaces the highlight on the blob.
+    const hasTopMod = lighthouseCombo
+      || has('keep') || has('crest')
+      || has('spire') || has('watch')
+      || has('asha')
+      || has('wyn') || has('pyre')
+      || has('crag') || has('reach')
+      || has('helm') || has('mel');
 
-    // Wing banners on shoulders (drawn behind on-top mods).
-    if (has('wings')) modWingBanners(ctx, t, br, blob);
-
-    // On-top mods. Resolve conflicts: at most one "center" mod; second goes
-    // to a side offset.
-    const topMods = slots.filter(s => s.slot.startsWith('top'));
-    let topUsedCenter = false;
-    const placeTop = (drawer, opts) => {
-      const x = topUsedCenter ? 14 : 0;
-      const scale = topUsedCenter ? 0.78 : 1;
-      topUsedCenter = true;
-      drawer(ctx, t, br, blob, { ...opts, x, scale });
+    // Auras and big things drawn behind the blob need a stub reference
+    // (radius/shoulders only) before drawBlob runs.
+    const stub = {
+      radius: 36,
+      topY: -30, bottomY: 34,
+      leftShoulder: { x: -27, y: -5 },
+      rightShoulder: { x: 27, y: -5 },
     };
-    for (const { mod, slot } of topMods) {
-      if (slot === 'top' && (mod === 'keep' || mod === 'crest')) placeTop(modCastle, {});
-      else if (slot === 'top' && (mod === 'spire' || mod === 'watch')) placeTop(modSeashellTower, {});
-      else if (slot === 'top' && (mod === 'helm' || mod === 'mel')) placeTop(modSword, {});
-      else if (slot === 'top-volcano') placeTop(modVolcano, {});
-      else if (slot === 'top-wyvern') placeTop(modWyvernPeak, { ember: mod === 'pyre' });
-      else if (slot === 'top-peaks') {
-        // Peaks go behind the top mods, so draw earlier — but since they're
-        // tall, just draw them shifted slightly to the side if center taken.
-        const x = topUsedCenter ? -16 : 0;
-        modPeaks(ctx, t, br, blob, { x, tall: 22, wide: 12 });
-      }
+    if (has('sol'))  modSunHalo(ctx, t, br, stub);
+    if (has('tide')) modWetSheen(ctx, t, br, stub);
+    if (has('wing') || has('aer')) modBellyWings(ctx, t, br, stub);
+
+    // The blob itself.
+    const blob = drawBlob(ctx, t, br, { seed, volcanic, skipHighlight: hasTopMod });
+
+    // Top-anchored modifier. Combinations are handled explicitly:
+    //   sol + spire → lighthouse (combo)
+    //   asha + keep → volcano at anchor, castle offset down-right and shrunk
+    //   wyn/pyre (+ optional crag) → wyvern-on-peak (peak is part of mod)
+    //   crag/reach alone → bare peaks
+    //   single top mod → its own drawer at anchor
+    if (lighthouseCombo) {
+      modLighthouse(ctx, t, br, blob);
+    } else if (has('asha') && (has('keep') || has('crest'))) {
+      modVolcano(ctx, t, br, blob);
+      const anchor = {
+        x: blob.surfaceAnchor.x + 13,
+        y: blob.surfaceAnchor.y + 5,
+      };
+      modCastle(ctx, t, br, blob, { anchor, scale: 0.7 });
+    } else if (has('wyn') || has('pyre')) {
+      modWyvernPeak(ctx, t, br, blob, { ember: has('pyre') });
+    } else if (has('asha')) {
+      modVolcano(ctx, t, br, blob);
+    } else if (has('crag') || has('reach')) {
+      modPeaks(ctx, t, br, blob);
+    } else if (has('keep') || has('crest')) {
+      modCastle(ctx, t, br, blob);
+    } else if (has('spire') || has('watch')) {
+      modSeashellTower(ctx, t, br, blob);
+    } else if (has('helm') || has('mel')) {
+      modWarBanner(ctx, t, br, blob);
     }
 
-    // Side mods. Mine prefers left; dock prefers right. If both, that works.
-    if (has('side-mine')) modMine(ctx, t, br, blob, { side: -1 });
-    if (has('side-dock')) modDock(ctx, t, br, blob, { side: 1 });
+    // Side-anchored modifiers (mine on left, dock on right).
+    if (has('glen') || has('dell')) modMine(ctx, t, br, blob, { side: -1 });
+    if (has('tide')) modDock(ctx, t, br, blob, { side: 1 });
 
-    // Perimeter mods last (in front of everything else, ground-level).
-    if (has('peri')) modOvergrown(ctx, t, br, blob, { seed });
+    // Overgrown cluster anchored on the surface (drawn last so brambles
+    // can wrap any nearby props).
+    if (has('hollow') || has('thorn')) modOvergrown(ctx, t, br, blob, { seed });
   }
 
   function drawTropical(ctx, t, br) {
