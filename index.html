@@ -1517,9 +1517,10 @@
 
   function updateHUD() {
     headingEl.textContent = compassDir(state.ship.heading);
-    // needle points opposite of heading (needle = north relative to ship facing)
+    // Needle points along the ship's heading. Convention: heading 0 = east
+    // (which is 90° clockwise from compass-12-o'clock-north), so add 90.
     const deg = state.ship.heading * 180 / Math.PI + 90;
-    needleEl.style.transform = `translate(-50%, -100%) rotate(${-deg}deg)`;
+    needleEl.style.transform = `translate(-50%, -100%) rotate(${deg}deg)`;
 
     if (state.target) {
       const d = Math.hypot(state.target.x - state.ship.x, state.target.y - state.ship.y);
