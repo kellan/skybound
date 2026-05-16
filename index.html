@@ -1527,7 +1527,12 @@
       destEl.textContent = state.target.name || 'Open sky';
       distEl.textContent = Math.round(d) + ' lg';
     } else {
-      destEl.textContent = 'Adrift';
+      let dockedAt = null;
+      for (const i of state.islands) {
+        const dx = i.x - state.ship.x, dy = i.y - state.ship.y;
+        if (dx*dx + dy*dy < (i.radius + 12) * (i.radius + 12)) { dockedAt = i; break; }
+      }
+      destEl.textContent = dockedAt ? `Docked at ${dockedAt.name}` : 'Adrift';
       distEl.textContent = '—';
     }
     const disc = state.islands.filter(i => i.discovered).length;
