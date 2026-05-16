@@ -744,23 +744,26 @@
   // and islands stay within. Two presets: the original "small" map and a
   // doubled-up "large" one for longer voyages.
   const MAP_PRESETS = {
-    small: { w: 3600, h: 2800, cx: 1800, cy: 1400, rx: 1800, ry: 1400, islandCount: 22 },
-    large: { w: 7200, h: 5600, cx: 3600, cy: 2800, rx: 3600, ry: 2800, islandCount: 55 },
+    small: { w: 3600, h: 2800, cx: 1800, cy: 1400, rx: 1800, ry: 1400, islandCount: 22, rimSparsity: 0.3 },
+    large: { w: 7200, h: 5600, cx: 3600, cy: 2800, rx: 3600, ry: 2800, islandCount: 35, rimSparsity: 2.0 },
   };
   let WORLD = { w: 0, h: 0, cx: 0, cy: 0, rx: 0, ry: 0 };
   let ISLAND_COUNT = 0;
+  // Min-distance is multiplied by (1 + nr^2 * RIM_SPARSITY), where nr is the
+  // island's normalized distance from center. A quadratic falloff keeps the
+  // middle of the map tight while only the outer rim opens up. Grand Voyage
+  // uses a much steeper value so the open-sea feel doesn't get crowded.
+  let RIM_SPARSITY = 0;
   function applyMapPreset(size) {
     const p = MAP_PRESETS[size] || MAP_PRESETS.small;
     WORLD.w = p.w; WORLD.h = p.h;
     WORLD.cx = p.cx; WORLD.cy = p.cy;
     WORLD.rx = p.rx; WORLD.ry = p.ry;
     ISLAND_COUNT = p.islandCount;
+    RIM_SPARSITY = p.rimSparsity;
   }
   applyMapPreset('small');
   const MIN_ISLAND_DIST = 380;
-  // Min-distance grows with normalized radius so the rim feels emptier than
-  // the center. 0 = uniform spacing everywhere; higher = more sparse at rim.
-  const RIM_SPARSITY = 0.5;
   const REVEAL_RADIUS = 220;
   const DISCOVERY_RADIUS = 140; // when an island is "discovered" by name
   const SHIP_MAX_SPEED = 110;   // px / sec
@@ -814,7 +817,7 @@
     // Larger maps have more islands to place, so the attempt budget scales too.
     const islands = [];
     let attempts = 0;
-    const attemptBudget = ISLAND_COUNT * 200;
+    const attemptBudget = ISLAND_COUNT * 400;
     const placeRx = WORLD.rx - 200, placeRy = WORLD.ry - 200;
     while (islands.length < ISLAND_COUNT && attempts < attemptBudget) {
       attempts++;
@@ -824,11 +827,10 @@
       if (r2 > 1) continue;
       const x = WORLD.cx + u * placeRx;
       const y = WORLD.cy + v * placeRy;
-      // Local min-distance grows with normalized radius so islands cluster
-      // near the middle and the rim feels sparse. Each island carries its
-      // own minDist; for a pair, the larger value wins.
-      const nr = Math.sqrt(r2);
-      const localMinDist = MIN_ISLAND_DIST * (1 + nr * RIM_SPARSITY);
+      // Local min-distance grows quadratically with normalized radius so the
+      // center stays tightly packed and only the rim opens up. Each island
+      // carries its own minDist; for a pair, the larger value wins.
+      const localMinDist = MIN_ISLAND_DIST * (1 + r2 * RIM_SPARSITY);
       let ok = true;
       for (const i of islands) {
         const dx = i.x - x, dy = i.y - y;
