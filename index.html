@@ -70,7 +70,7 @@
   }
   .badge.small { font-size: 10px; padding: 5px 8px; }
 
-  /* Compass */
+  /* Compass — passive display, not interactive */
   #compass {
     width: 52px; height: 52px;
     background: var(--parchment);
@@ -78,10 +78,10 @@
     border-radius: 50%;
     position: relative;
     box-shadow: 0 2px 0 rgba(0,0,0,0.25);
-    pointer-events: auto;
-    cursor: pointer;
   }
-  #compass:active { transform: translateY(1px); box-shadow: 0 1px 0 rgba(0,0,0,0.25); }
+  /* Captain's Log badge is the chart trigger */
+  #log-badge { cursor: pointer; }
+  #log-badge:active { transform: translateY(1px); box-shadow: 0 1px 0 rgba(0,0,0,0.25); }
   #compass::before {
     content: 'N';
     position: absolute; top: 2px; left: 50%;
@@ -383,7 +383,7 @@
     <canvas id="world"></canvas>
 
     <div id="top-bar">
-      <div class="badge">
+      <div class="badge" id="log-badge">
         Captain's Log
         <strong id="discovered-count">0 / 0 isles</strong>
       </div>
@@ -1408,13 +1408,13 @@
     }
   }
 
-  // Wire compass and overlay taps. `click` is the single canonical event here;
-  // we scoped touch-action away from body earlier so synthesized clicks fire
-  // normally in WKWebView.
+  // Wire Captain's Log badge and overlay taps. `click` is the single canonical
+  // event here; we scoped touch-action away from body earlier so synthesized
+  // clicks fire normally in WKWebView.
   (() => {
-    const compass = document.getElementById('compass');
-    if (compass) {
-      compass.addEventListener('click', (e) => {
+    const logBadge = document.getElementById('log-badge');
+    if (logBadge) {
+      logBadge.addEventListener('click', (e) => {
         e.preventDefault();
         e.stopPropagation();
         toggleMinimap();
