@@ -66,8 +66,15 @@ export function installCanvasShim(window) {
     if (!this.__shimCtx) this.__shimCtx = makeCtx(this);
     return this.__shimCtx;
   };
+  // The game's canvases use CSS `width:100%;height:100%` to fill their
+  // container, which in a real browser yields a getBoundingClientRect equal
+  // to the viewport. JSDOM has no layout engine, so we approximate by
+  // returning the window's inner dimensions for every canvas — close enough
+  // for the tests, and matches the production sizing path through resize().
   HTMLCanvasElement.prototype.getBoundingClientRect = function () {
-    return { left: 0, top: 0, right: this.width, bottom: this.height,
-             width: this.width, height: this.height, x: 0, y: 0 };
+    const win = this.ownerDocument && this.ownerDocument.defaultView;
+    const w = win ? win.innerWidth : this.width;
+    const h = win ? win.innerHeight : this.height;
+    return { left: 0, top: 0, right: w, bottom: h, width: w, height: h, x: 0, y: 0 };
   };
 }

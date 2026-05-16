@@ -1660,6 +1660,12 @@
           saveState,
           get stampGrid() { return stampGrid; },
           get fogCanvas() { return fogCanvas; },
+          get edgeLabelHits() { return edgeLabelHits; },
+          get viewW() { return viewW; },
+          get viewH() { return viewH; },
+          get camera() { return camera; },
+          onTap,
+          toggleMinimap,
           setShip(x, y, vx = 0, vy = 0, heading = 0) {
             state.ship.x = x; state.ship.y = y;
             state.ship.vx = vx; state.ship.vy = vy;
