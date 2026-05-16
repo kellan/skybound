@@ -764,11 +764,40 @@
   fogCanvas.height = Math.floor(WORLD.h * FOG_SCALE);
   const fogCtx = fogCanvas.getContext('2d');
 
+  // Spatial grid for stamp dedup. Cell size equals the dedup radius, so a 3x3
+  // neighborhood around the query cell covers every possible nearby stamp.
+  const DEDUP_RADIUS = REVEAL_RADIUS * 0.5;
+  const DEDUP_CELL = DEDUP_RADIUS;
+  const stampGrid = new Map();
+  function indexStamp(wx, wy) {
+    const k = Math.floor(wx / DEDUP_CELL) + ',' + Math.floor(wy / DEDUP_CELL);
+    let arr = stampGrid.get(k);
+    if (!arr) { arr = []; stampGrid.set(k, arr); }
+    arr.push(wx, wy);
+  }
+  function hasNearbyStamp(wx, wy) {
+    const cx = Math.floor(wx / DEDUP_CELL), cy = Math.floor(wy / DEDUP_CELL);
+    const r2 = DEDUP_RADIUS * DEDUP_RADIUS;
+    for (let dx = -1; dx <= 1; dx++) {
+      for (let dy = -1; dy <= 1; dy++) {
+        const arr = stampGrid.get((cx + dx) + ',' + (cy + dy));
+        if (!arr) continue;
+        for (let i = 0; i < arr.length; i += 2) {
+          const ex = arr[i] - wx, ey = arr[i + 1] - wy;
+          if (ex * ex + ey * ey < r2) return true;
+        }
+      }
+    }
+    return false;
+  }
+
   function bakeFog() {
     // Fully opaque dark fog
     fogCtx.globalCompositeOperation = 'source-over';
     fogCtx.fillStyle = 'rgba(18, 26, 38, 0.92)';
     fogCtx.fillRect(0, 0, fogCanvas.width, fogCanvas.height);
+    // Rebuild the spatial index alongside the visual mask
+    stampGrid.clear();
     // Erase reveal circles with soft edge
     fogCtx.globalCompositeOperation = 'destination-out';
     for (const r of state.reveals) {
@@ -782,13 +811,17 @@
       fogCtx.beginPath();
       fogCtx.arc(x, y, rad, 0, Math.PI * 2);
       fogCtx.fill();
+      indexStamp(r.x, r.y);
     }
     fogCtx.globalCompositeOperation = 'source-over';
   }
 
-  // Stamp a single new reveal incrementally (cheaper than rebaking)
+  // Stamp a single new reveal incrementally (cheaper than rebaking).
+  // Returns false if dedup'd against an existing stamp.
   function stampReveal(wx, wy) {
+    if (hasNearbyStamp(wx, wy)) return false;
     state.reveals.push({ x: wx, y: wy });
+    indexStamp(wx, wy);
     const x = wx * FOG_SCALE, y = wy * FOG_SCALE;
     const rad = REVEAL_RADIUS * FOG_SCALE;
     fogCtx.globalCompositeOperation = 'destination-out';
@@ -801,6 +834,7 @@
     fogCtx.arc(x, y, rad, 0, Math.PI * 2);
     fogCtx.fill();
     fogCtx.globalCompositeOperation = 'source-over';
+    return true;
   }
 
   // ----- Camera -----
