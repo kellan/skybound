@@ -1637,14 +1637,14 @@
     ctx.fillStyle = 'rgba(255, 255, 255, 0.55)'; ctx.fill();
   }
 
-  // Per-canvas animation state for the wind serpent's segment angles.
-  // WeakMap so the game's main canvas and each hangar preview canvas keep
-  // independent state (and it's collected when the canvas goes away).
+  // Per-canvas animation state for the wind serpent. WeakMap so the game's
+  // main canvas and each hangar preview canvas keep independent state.
   const wsStateMap = new WeakMap();
 
   function drawShipWindSerpent(ctx, t, speed, facingLeft = false) {
-    // Profile view, but turning isn't a snap flip — each segment's facing
-    // chases the segment in front of it, so the body coils through the turn.
+    // Profile view. Turning is animated as: bunch up onto the head,
+    // invisibly flip facing while bunched, then extend out in the new
+    // direction. Preserves "up" (horn + eye stay on top) throughout.
     const segs = 7;
     const segLen = 4.2;
     const amp = 3.2;
@@ -1652,50 +1652,55 @@
 
     let st = wsStateMap.get(ctx);
     if (!st) {
-      st = { angles: new Array(segs).fill(target), lastT: t };
+      st = { facing: target, bunch: 0, lastT: t };
       wsStateMap.set(ctx, st);
     }
     const dt = Math.min(0.1, Math.max(0, t - st.lastT));
     st.lastT = t;
 
-    // Head chases the target facing; each segment chases the one in front of
-    // it slightly slower, so a turn propagates back through the body.
-    const headRate = 3.2;
-    const bodyRate = 2.4;
-    const hd = angleDiff(st.angles[0], target);
-    st.angles[0] += Math.sign(hd) * Math.min(Math.abs(hd), headRate * dt);
-    for (let i = 1; i < segs; i++) {
-      const d = angleDiff(st.angles[i], st.angles[i - 1]);
-      st.angles[i] += Math.sign(d) * Math.min(Math.abs(d), bodyRate * dt);
+    // Animation: target reached when bunch goes 0 → 1 → 0.
+    // bunchRate = 2.0 → ~0.5s bunch + ~0.5s extend = ~1.0s total turn.
+    const bunchRate = 2.0;
+    if (st.facing !== target) {
+      st.bunch += bunchRate * dt;
+      if (st.bunch >= 1) { st.bunch = 1; st.facing = target; }
+    } else if (st.bunch > 0) {
+      st.bunch -= bunchRate * dt;
+      if (st.bunch < 0) st.bunch = 0;
     }
 
-    // Build segment positions by stepping backward along each segment's trail
-    // direction (opposite of its facing). Perpendicular sinusoidal wiggle
-    // adds the original "snake undulation" feel even mid-turn.
+    const bunch = st.bunch;
+    const facing = st.facing;           // 0 (right) or π (left), no in-between
+    const trailAng = facing + Math.PI;  // body extends opposite of facing
+
+    // While bunching, segment length shrinks and wiggle dampens. A small
+    // per-segment coil rotation makes the body curl as it compresses.
+    const effSegLen = segLen * (1 - bunch * 0.92);
+    const effAmp = amp * (1 - bunch * 0.6);
+    const coilAmount = bunch * Math.PI * 0.5;
+    const coilSign = facing === 0 ? -1 : 1;
+
     const wigRate = 2.6 + speed * 1;
     const points = [];
     let x = 0, y = 0;
     for (let i = 0; i < segs; i++) {
       const along = i / (segs - 1);
-      const a = st.angles[i];
-      const trailAng = a + Math.PI;
-      const wig = Math.sin(t * wigRate - i * 0.9) * amp * along;
-      const perpX = -Math.sin(trailAng);
-      const perpY =  Math.cos(trailAng);
+      const segTrail = trailAng + coilSign * coilAmount * along;
+      const wig = Math.sin(t * wigRate - i * 0.9) * effAmp * along;
+      const perpX = -Math.sin(segTrail);
+      const perpY =  Math.cos(segTrail);
       points.push({ x: x + perpX * wig, y: y + perpY * wig, r: 4.6 - along * 3.6 });
-      x += segLen * Math.cos(trailAng);
-      y += segLen * Math.sin(trailAng);
+      x += effSegLen * Math.cos(segTrail);
+      y += effSegLen * Math.sin(segTrail);
     }
 
-    // Re-center so the body's center of mass sits at the ship anchor.
-    // Without this, the head's position would drift relative to the camera
-    // during a turn and the ship would feel like it's swimming sideways.
+    // Center on COM so the head doesn't drift relative to the camera.
     let cmx = 0, cmy = 0;
     for (const p of points) { cmx += p.x; cmy += p.y; }
     cmx /= segs; cmy /= segs;
     for (const p of points) { p.x -= cmx; p.y -= cmy; }
 
-    // Tail-first so head draws on top
+    // Body — tail first so head draws on top.
     ctx.strokeStyle = '#2a2417'; ctx.lineWidth = 0.8;
     for (let i = segs - 1; i >= 1; i--) {
       const p = points[i];
@@ -1705,11 +1710,12 @@
       ctx.stroke();
     }
 
-    // Head + winglets, rotated to the head's current facing.
+    // Head + winglets — flipped along x for left-facing, never rotated, so
+    // the horn and eye stay on top.
     const head = points[0];
     ctx.save();
     ctx.translate(head.x, head.y);
-    ctx.rotate(st.angles[0]);
+    if (facing === Math.PI) ctx.scale(-1, 1);
     const wingFlap = Math.sin(t * (5.5 + speed * 1.5)) * 0.45;
     for (const side of [-1, 1]) {
       ctx.save();
