@@ -1,6 +1,6 @@
 # Skybound — Navigation POC
 
-A proof of concept for a larger game project. Web-based, mobile-first (vertical orientation), exploring slow flight between procedurally placed islands with permanent fog-of-war reveal. Inspired by the navigation feel of *Merchant of the Skies*.
+A proof of concept for a larger game project. Web-based, mobile-first (vertical orientation), exploring slow flight between procedurally placed islands with permanent fog-of-war reveal. 
 
 ## Current state
 
