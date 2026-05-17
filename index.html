@@ -2591,6 +2591,30 @@
     const wx = (x) => ox + x * scale;
     const wy = (y) => oy + y * scale;
 
+    // Fog of war: haze the unexplored sea, then soft-erase the revealed circles.
+    // Clipped to the ellipse so the haze never bleeds past the cloud wall.
+    miniCtx.save();
+    miniCtx.beginPath();
+    miniCtx.ellipse(wx(WORLD.cx), wy(WORLD.cy), WORLD.rx * scale, WORLD.ry * scale, 0, 0, Math.PI * 2);
+    miniCtx.clip();
+    miniCtx.fillStyle = 'rgba(120, 138, 158, 0.42)';
+    miniCtx.fillRect(0, 0, miniW, miniH);
+    const revealRad = REVEAL_RADIUS * scale;
+    miniCtx.globalCompositeOperation = 'destination-out';
+    for (const r of state.reveals) {
+      const rx = wx(r.x), ry = wy(r.y);
+      const g = miniCtx.createRadialGradient(rx, ry, revealRad * 0.3, rx, ry, revealRad);
+      g.addColorStop(0, 'rgba(0,0,0,1)');
+      g.addColorStop(0.7, 'rgba(0,0,0,0.85)');
+      g.addColorStop(1, 'rgba(0,0,0,0)');
+      miniCtx.fillStyle = g;
+      miniCtx.beginPath();
+      miniCtx.arc(rx, ry, revealRad, 0, Math.PI * 2);
+      miniCtx.fill();
+    }
+    miniCtx.globalCompositeOperation = 'source-over';
+    miniCtx.restore();
+
     // Cloud-wall ring (soft band)
     miniCtx.save();
     miniCtx.translate(wx(WORLD.cx), wy(WORLD.cy));
