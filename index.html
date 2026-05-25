@@ -921,7 +921,7 @@
         applyMapPreset(parsed.mapSize || 'small');
         resizeFogCanvas();
         if (!parsed.mapSize) parsed.mapSize = 'small';
-        if (!parsed.shipType) parsed.shipType = 'sloop';
+        if (!parsed.shipType) parsed.shipType = 'cloudGalleon';
         if (parsed.ship && parsed.ship.facingLeft == null) parsed.ship.facingLeft = false;
         if (parsed.layer == null) parsed.layer = DEFAULT_LAYER;
         if (!parsed.layers || !Array.isArray(parsed.layers) || parsed.layers.length !== LAYER_COUNT) {
@@ -1034,7 +1034,7 @@
         heading: -Math.PI / 4, // facing up-right
         facingLeft: false,
       },
-      shipType: 'sloop',
+      shipType: 'cloudGalleon',
       target: null, // {x, y}
       transition: null,
     };
@@ -1059,7 +1059,7 @@
         reveals: layer.reveals,
       })),
       ship: { x: state.ship.x, y: state.ship.y, vx: 0, vy: 0, heading: state.ship.heading, facingLeft: !!state.ship.facingLeft },
-      shipType: state.shipType || 'sloop',
+      shipType: state.shipType || 'cloudGalleon',
       target: state.target,
     };
     try { localStorage.setItem(SAVE_KEY, JSON.stringify(s)); } catch(e) {}
