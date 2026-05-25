@@ -813,7 +813,7 @@
         applyMapPreset(parsed.mapSize || 'small');
         resizeFogCanvas();
         if (!parsed.mapSize) parsed.mapSize = 'small';
-        if (!parsed.shipType) parsed.shipType = 'sloop';
+        if (!parsed.shipType) parsed.shipType = 'cloudGalleon';
         if (parsed.ship && parsed.ship.facingLeft == null) parsed.ship.facingLeft = false;
         // Modifiers are deterministic from the name — recompute on load so
         // old saves pick up new tokens without needing a save-format bump.
@@ -911,7 +911,7 @@
         heading: -Math.PI / 4, // facing up-right
         facingLeft: false,
       },
-      shipType: 'sloop',
+      shipType: 'cloudGalleon',
       target: null, // {x, y}
       // reveal stamps: list of {x,y} centers; we re-bake fog from these
       reveals: [{ x: start.x + 60, y: start.y + 60 }]
@@ -928,7 +928,7 @@
         shape: i.shape, discovered: i.discovered
       })),
       ship: { x: state.ship.x, y: state.ship.y, vx: 0, vy: 0, heading: state.ship.heading, facingLeft: !!state.ship.facingLeft },
-      shipType: state.shipType || 'sloop',
+      shipType: state.shipType || 'cloudGalleon',
       target: state.target,
       reveals: state.reveals
     };
