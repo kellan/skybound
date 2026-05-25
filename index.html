@@ -432,6 +432,87 @@
     width: 100%;
     height: calc(100% - 28px);
   }
+
+  /* Altitude controls — vertical chevrons on the right edge, thumb-reachable */
+  #altitude-stack {
+    position: absolute;
+    right: 12px;
+    top: 50%;
+    transform: translateY(-50%);
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    z-index: 6;
+    pointer-events: none;
+  }
+  .alt-btn {
+    pointer-events: auto;
+    width: 44px; height: 44px;
+    background: var(--parchment);
+    border: 1px solid var(--ink);
+    border-radius: 4px;
+    box-shadow: 0 2px 0 rgba(0,0,0,0.25);
+    color: var(--ink);
+    font-family: inherit;
+    font-size: 20px;
+    line-height: 1;
+    display: flex; align-items: center; justify-content: center;
+    cursor: pointer;
+    padding: 0;
+    touch-action: manipulation;
+  }
+  .alt-btn:active:not(:disabled) {
+    transform: translateY(1px);
+    box-shadow: 0 1px 0 rgba(0,0,0,0.25);
+  }
+  .alt-btn:disabled {
+    opacity: 0.35;
+    cursor: default;
+  }
+  /* Tiny stack of layer notches between the buttons — current layer highlighted */
+  #altimeter {
+    pointer-events: none;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 4px;
+    padding: 6px 0;
+  }
+  #altimeter .notch {
+    width: 16px; height: 3px;
+    background: rgba(42, 36, 23, 0.35);
+    border-radius: 1px;
+  }
+  #altimeter .notch.active {
+    background: var(--accent);
+    width: 20px;
+    height: 4px;
+  }
+
+  /* Full-screen veil for ascend/descend transition */
+  #transition-veil {
+    position: absolute;
+    inset: 0;
+    background: var(--fog);
+    opacity: 0;
+    pointer-events: none;
+    z-index: 8;
+  }
+  #transition-veil.active { pointer-events: auto; }
+  #transition-label {
+    position: absolute;
+    top: 50%; left: 50%;
+    transform: translate(-50%, -50%);
+    font-family: inherit;
+    font-size: 18px;
+    font-variant: small-caps;
+    letter-spacing: 0.18em;
+    color: var(--parchment-light);
+    opacity: 0;
+    pointer-events: none;
+    z-index: 9;
+    text-shadow: 0 2px 6px rgba(0,0,0,0.4);
+  }
 </style>
 </head>
 <body>
@@ -476,6 +557,10 @@
           <span class="label">Heading</span>
           <span class="value" id="heading-val">—</span>
         </div>
+        <div class="row" style="margin-top:4px;">
+          <span class="label">Altitude</span>
+          <span class="value" id="altitude-val">—</span>
+        </div>
         <div class="divider"></div>
         <div class="row">
           <span class="label">Bound for</span>
@@ -487,6 +572,17 @@
         </div>
       </div>
     </div>
+
+    <!-- Altitude controls (ascend / altimeter / descend) -->
+    <div id="altitude-stack">
+      <button class="alt-btn" id="ascend-btn" aria-label="Ascend">▲</button>
+      <div id="altimeter"></div>
+      <button class="alt-btn" id="descend-btn" aria-label="Descend">▼</button>
+    </div>
+
+    <!-- Transition veil & label for ascend/descend -->
+    <div id="transition-veil"></div>
+    <div id="transition-label"></div>
 
     <div id="intro">
       <div id="intro-card">
@@ -765,6 +861,18 @@
   const SHIP_DRAG = 0.6;        // per sec when not thrusting
   const SHIP_TURN_RATE = 1.4;   // rad / sec
 
+  // ----- Altitude layers -----
+  // The world is a stack of layers; the ship navigates one layer at a time.
+  // Each layer has its own islands and fog mask. Adjacent layers share the
+  // ship's (x, y) but otherwise are independent worlds. Placeholder names;
+  // expect to revisit. If we ever want >3 layers we should reconsider memory
+  // (each layer's reveals + island list lives in localStorage).
+  const LAYER_NAMES = ['High Reaches', 'Cloud Sea', 'Hollow Deeps'];
+  const LAYER_COUNT = LAYER_NAMES.length;
+  const DEFAULT_LAYER = 1;          // middle layer is where ships spawn
+  const TRANSITION_DUR = 2.5;       // seconds for an ascend/descend animation
+  const SAVE_KEY = 'skybound-poc-v3'; // bumped from v2 — layered worlds
+
   // ----- Island name fragments -----
   // These are the original "small map" name pool — kept verbatim because the
   // smaller voyages have a settled, familiar set of island names.
@@ -806,7 +914,7 @@
   let state = null;
 
   function loadOrCreateState() {
-    const saved = localStorage.getItem('skybound-poc-v2');
+    const saved = localStorage.getItem(SAVE_KEY);
     if (saved) {
       try {
         const parsed = JSON.parse(saved);
@@ -815,31 +923,36 @@
         if (!parsed.mapSize) parsed.mapSize = 'small';
         if (!parsed.shipType) parsed.shipType = 'sloop';
         if (parsed.ship && parsed.ship.facingLeft == null) parsed.ship.facingLeft = false;
-        // Modifiers are deterministic from the name — recompute on load so
-        // old saves pick up new tokens without needing a save-format bump.
-        if (parsed.islands) {
-          for (const isl of parsed.islands) isl.modifiers = modifiersFor(isl.name);
+        if (parsed.layer == null) parsed.layer = DEFAULT_LAYER;
+        if (!parsed.layers || !Array.isArray(parsed.layers) || parsed.layers.length !== LAYER_COUNT) {
+          throw new Error('layer shape mismatch');
         }
+        // Modifiers are deterministic from the name — recompute on load.
+        for (const layer of parsed.layers) {
+          for (const isl of layer.islands) isl.modifiers = modifiersFor(isl.name);
+        }
+        // Bind convenience aliases to the current layer's arrays. All the
+        // gameplay code reads state.islands / state.reveals; we rebind these
+        // when the layer changes.
+        parsed.islands = parsed.layers[parsed.layer].islands;
+        parsed.reveals = parsed.layers[parsed.layer].reveals;
+        parsed.transition = null; // never resume mid-transition
         return parsed;
       } catch(e) {}
     }
+    // Old v2 saves are incompatible with the layered world; clear them.
+    try { localStorage.removeItem('skybound-poc-v2'); } catch(e) {}
     return newState('small');
   }
 
-  function newState(mapSize = 'small') {
-    applyMapPreset(mapSize);
-    resizeFogCanvas();
-
-    const seed = (Math.random() * 1e9) | 0;
-    const r = rng(seed);
-
-    // Larger map draws from the combined name pool for more variety; the
-    // small map keeps its original 15×14 list untouched.
+  // Build a single layer of islands. The spawn layer gets its first island
+  // forced to a neutral (no-modifier) name so the player starts beside a
+  // plain blob; other layers have no such constraint.
+  function generateLayer(layerSeed, mapSize, isSpawnLayer) {
+    const r = rng(layerSeed);
     const prefixes = mapSize === 'large' ? NAME_PREFIX.concat(NAME_PREFIX_LARGE) : NAME_PREFIX;
     const suffixes = mapSize === 'large' ? NAME_SUFFIX.concat(NAME_SUFFIX_LARGE) : NAME_SUFFIX;
 
-    // Place islands with min-distance rejection, inside the world ellipse.
-    // Larger maps have more islands to place, so the attempt budget scales too.
     const islands = [];
     const usedNames = new Set();
     let attempts = 0;
@@ -847,7 +960,6 @@
     const placeRx = WORLD.rx - 200, placeRy = WORLD.ry - 200;
     while (islands.length < ISLAND_COUNT && attempts < attemptBudget) {
       attempts++;
-      // Rejection-sample the unit disk, then scale to the inset ellipse
       const u = r() * 2 - 1, v = r() * 2 - 1;
       if (u*u + v*v > 1) continue;
       const x = WORLD.cx + u * placeRx;
@@ -859,12 +971,7 @@
       }
       if (!ok) continue;
 
-      // Pick a name. Names must be unique across the map so each island
-      // gets its own art (modifiers are derived from the name). The first
-      // island placed is the ship's spawn point, so we additionally require
-      // a "neutral" name with no modifier tokens — guaranteeing players
-      // start beside a default blob island.
-      const needNeutral = islands.length === 0;
+      const needNeutral = isSpawnLayer && islands.length === 0;
       let name = null;
       for (let na = 0; na < 200; na++) {
         const candidate = prefixes[(r()*prefixes.length)|0] + suffixes[(r()*suffixes.length)|0];
@@ -874,8 +981,6 @@
         break;
       }
       if (!name) {
-        // Exhausted random tries — scan the full prefix×suffix grid for
-        // any combo that still satisfies the constraints.
         outer: for (const p of prefixes) {
           for (const s of suffixes) {
             const cand = p + s;
@@ -886,25 +991,43 @@
           }
         }
       }
-      if (!name) break; // name pool exhausted; stop placing
+      if (!name) break;
       usedNames.add(name);
       islands.push({
         x, y,
         radius: 28 + r() * 22,
         name,
         modifiers: modifiersFor(name),
-        shape: Math.floor(r() * 1000), // seed for blob shape
+        shape: Math.floor(r() * 1000),
         discovered: false
       });
     }
+    return { islands, reveals: [] };
+  }
 
-    // Spawn ship at first island
-    const start = islands[0];
+  function newState(mapSize = 'small') {
+    applyMapPreset(mapSize);
+    resizeFogCanvas();
 
-    return {
+    const seed = (Math.random() * 1e9) | 0;
+
+    // Each layer gets its own deterministic sub-seed so the layout is
+    // reproducible per (seed, layer) pair but distinct across layers.
+    const layers = [];
+    for (let i = 0; i < LAYER_COUNT; i++) {
+      const sub = (seed ^ (i * 0x9E3779B9)) >>> 0;
+      layers.push(generateLayer(sub, mapSize, i === DEFAULT_LAYER));
+    }
+
+    // Spawn ship at the first island on the default (middle) layer.
+    const start = layers[DEFAULT_LAYER].islands[0];
+    layers[DEFAULT_LAYER].reveals.push({ x: start.x + 60, y: start.y + 60 });
+
+    const s = {
       seed,
       mapSize,
-      islands,
+      layer: DEFAULT_LAYER,
+      layers,
       ship: {
         x: start.x + 60, y: start.y + 60,
         vx: 0, vy: 0,
@@ -913,26 +1036,33 @@
       },
       shipType: 'sloop',
       target: null, // {x, y}
-      // reveal stamps: list of {x,y} centers; we re-bake fog from these
-      reveals: [{ x: start.x + 60, y: start.y + 60 }]
+      transition: null,
     };
+    // Convenience aliases to the current layer's arrays.
+    s.islands = s.layers[s.layer].islands;
+    s.reveals = s.layers[s.layer].reveals;
+    return s;
   }
 
   function saveState() {
     // strip ship velocity (recomputed) but keep position/heading
     const s = {
+      schemaVersion: 3,
       seed: state.seed,
       mapSize: state.mapSize || 'small',
-      islands: state.islands.map(i => ({
-        x: i.x, y: i.y, radius: i.radius, name: i.name,
-        shape: i.shape, discovered: i.discovered
+      layer: state.layer,
+      layers: state.layers.map(layer => ({
+        islands: layer.islands.map(i => ({
+          x: i.x, y: i.y, radius: i.radius, name: i.name,
+          shape: i.shape, discovered: i.discovered
+        })),
+        reveals: layer.reveals,
       })),
       ship: { x: state.ship.x, y: state.ship.y, vx: 0, vy: 0, heading: state.ship.heading, facingLeft: !!state.ship.facingLeft },
       shipType: state.shipType || 'sloop',
       target: state.target,
-      reveals: state.reveals
     };
-    try { localStorage.setItem('skybound-poc-v2', JSON.stringify(s)); } catch(e) {}
+    try { localStorage.setItem(SAVE_KEY, JSON.stringify(s)); } catch(e) {}
   }
 
   // ----- Fog mask (offscreen canvas, world-sized) -----
@@ -1020,6 +1150,60 @@
     return true;
   }
 
+  // ----- Altitude transitions -----
+  // beginTransition() kicks off a multi-second ascend/descend animation.
+  // Halfway through, the active layer is swapped (its islands/reveals/fog),
+  // hidden under a screen veil that ramps up then back down.
+  function beginTransition(direction) {
+    if (!state || state.transition) return false;
+    const toLayer = state.layer + direction;
+    if (toLayer < 0 || toLayer >= LAYER_COUNT) return false;
+    state.transition = {
+      direction,
+      fromLayer: state.layer,
+      toLayer,
+      t: 0,
+      swapped: false,
+    };
+    // The current target lives on the old layer; drop it so the ship coasts
+    // to a stop on arrival instead of pursuing a phantom position.
+    state.target = null;
+    window.__DBG?.push('info',
+      `transition ${direction < 0 ? '↑' : '↓'} ${LAYER_NAMES[state.layer]} → ${LAYER_NAMES[toLayer]}`);
+    return true;
+  }
+  function ascend()  { return beginTransition(-1); }
+  function descend() { return beginTransition(+1); }
+
+  // Veil opacity: 0 → ~0.95 → 0 over the transition. Cosine so the mid-peak
+  // is gentle rather than spiky.
+  function transitionVeilAlpha() {
+    if (!state.transition) return 0;
+    const u = state.transition.t / TRANSITION_DUR; // 0..1
+    return Math.sin(Math.max(0, Math.min(1, u)) * Math.PI);
+  }
+
+  function updateTransition(dt) {
+    const tr = state.transition;
+    tr.t += dt;
+    // At the visual peak, swap the layer: rebind island/reveal aliases and
+    // rebake the fog so the new world is ready under the veil.
+    if (!tr.swapped && tr.t >= TRANSITION_DUR / 2) {
+      state.layer = tr.toLayer;
+      state.islands = state.layers[state.layer].islands;
+      state.reveals = state.layers[state.layer].reveals;
+      bakeFog();
+      // Drop a reveal at the ship's position so the player can see where
+      // they emerged on the new layer instead of staring at solid fog.
+      stampReveal(state.ship.x, state.ship.y);
+      lastRevealX = state.ship.x; lastRevealY = state.ship.y;
+      tr.swapped = true;
+    }
+    if (tr.t >= TRANSITION_DUR) {
+      state.transition = null;
+    }
+  }
+
   // ----- Camera -----
   const camera = { x: 0, y: 0, smoothing: 4 };
 
@@ -1044,6 +1228,8 @@
   }
 
   function onTap(clientX, clientY) {
+    // Ignore taps while changing altitude — re-enable when the transition ends.
+    if (state.transition) return;
     const rect = canvas.getBoundingClientRect();
     const sx = clientX - rect.left;
     const sy = clientY - rect.top;
@@ -1082,6 +1268,32 @@
     window.__DBG?.push('info', `tap (${Math.round(e.clientX)}, ${Math.round(e.clientY)})${state.target ? ' → target set' : ''}`);
   });
 
+  // Altitude controls — pointerdown is enough; the WKWebView "click-after-touch"
+  // issue is only relevant for buttons inside scroll containers.
+  function wireAltButton(btn, fn) {
+    if (!btn) return;
+    const handler = (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      if (btn.disabled) return;
+      fn();
+    };
+    btn.addEventListener('click', handler);
+  }
+  wireAltButton(document.getElementById('ascend-btn'), ascend);
+  wireAltButton(document.getElementById('descend-btn'), descend);
+
+  // Keyboard shortcuts for desktop play & testing.
+  window.addEventListener('keydown', (e) => {
+    if (e.key === 'PageUp' || e.key === 'q' || e.key === 'Q') {
+      e.preventDefault();
+      ascend();
+    } else if (e.key === 'PageDown' || e.key === 'e' || e.key === 'E') {
+      e.preventDefault();
+      descend();
+    }
+  });
+
   // ----- Update -----
   function angleDiff(a, b) {
     let d = b - a;
@@ -1093,8 +1305,46 @@
   let lastRevealX = -1e9, lastRevealY = -1e9;
   const REVEAL_STEP = 80; // stamp every N px traveled
 
+  // Clamp ship to the world ellipse and kill outward velocity so it rests
+  // against the cloud wall instead of buzzing along it.
+  function clampShipToBounds() {
+    const ship = state.ship;
+    const margin = 40;
+    const erx = WORLD.rx - margin, ery = WORLD.ry - margin;
+    const ex = (ship.x - WORLD.cx) / erx;
+    const ey = (ship.y - WORLD.cy) / ery;
+    const e2 = ex*ex + ey*ey;
+    if (e2 > 1) {
+      const e = Math.sqrt(e2);
+      ship.x = WORLD.cx + (ship.x - WORLD.cx) / e;
+      ship.y = WORLD.cy + (ship.y - WORLD.cy) / e;
+      let nx = (ship.x - WORLD.cx) / (erx * erx);
+      let ny = (ship.y - WORLD.cy) / (ery * ery);
+      const nl = Math.hypot(nx, ny) || 1;
+      nx /= nl; ny /= nl;
+      const vdotn = ship.vx * nx + ship.vy * ny;
+      if (vdotn > 0) { ship.vx -= vdotn * nx; ship.vy -= vdotn * ny; }
+    }
+  }
+
   function update(dt) {
     const ship = state.ship;
+
+    // Transition path: ship coasts (decaying velocity), camera follows,
+    // no steering / reveal stamping / discovery while changing layers.
+    if (state.transition) {
+      updateTransition(dt);
+      const decay = Math.exp(-1.5 * dt);
+      ship.vx *= decay;
+      ship.vy *= decay;
+      ship.x += ship.vx * dt;
+      ship.y += ship.vy * dt;
+      clampShipToBounds();
+      const k = 1 - Math.exp(-camera.smoothing * dt);
+      camera.x += (ship.x - camera.x) * k;
+      camera.y += (ship.y - camera.y) * k;
+      return;
+    }
 
     if (state.target) {
       const dx = state.target.x - ship.x;
@@ -1181,27 +1431,7 @@
     ship.x += ship.vx * dt;
     ship.y += ship.vy * dt;
 
-    // Bounds: clamp to the world ellipse and kill outward velocity so the
-    // ship rests against the cloud wall instead of buzzing along it.
-    {
-      const margin = 40;
-      const erx = WORLD.rx - margin, ery = WORLD.ry - margin;
-      const ex = (ship.x - WORLD.cx) / erx;
-      const ey = (ship.y - WORLD.cy) / ery;
-      const e2 = ex*ex + ey*ey;
-      if (e2 > 1) {
-        const e = Math.sqrt(e2);
-        ship.x = WORLD.cx + (ship.x - WORLD.cx) / e;
-        ship.y = WORLD.cy + (ship.y - WORLD.cy) / e;
-        // Outward normal = gradient of (dx/rx)^2 + (dy/ry)^2
-        let nx = (ship.x - WORLD.cx) / (erx * erx);
-        let ny = (ship.y - WORLD.cy) / (ery * ery);
-        const nl = Math.hypot(nx, ny) || 1;
-        nx /= nl; ny /= nl;
-        const vdotn = ship.vx * nx + ship.vy * ny;
-        if (vdotn > 0) { ship.vx -= vdotn * nx; ship.vy -= vdotn * ny; }
-      }
-    }
+    clampShipToBounds();
 
     // Reveal stamps along path
     const ddx = ship.x - lastRevealX, ddy = ship.y - lastRevealY;
@@ -1776,8 +2006,15 @@
   function drawShip(cx, cy, heading) {
     const view = SHIP_VIEWS[state.shipType] || 'topdown';
     const v = Math.hypot(state.ship.vx, state.ship.vy);
-    const speed01 = Math.min(1, v / SHIP_MAX_SPEED);
+    let speed01 = Math.min(1, v / SHIP_MAX_SPEED);
     const t = performance.now() * 0.001;
+    // While ascending/descending, drive the ship's flap/sail animation hard
+    // (full effort) — sails strain, wings beat fast through the cloud.
+    if (state.transition) {
+      const u = state.transition.t / TRANSITION_DUR;
+      const effort = Math.sin(Math.max(0, Math.min(1, u)) * Math.PI);
+      speed01 = Math.max(speed01, effort);
+    }
 
     ctx.save();
     ctx.translate(cx, cy);
@@ -2576,6 +2813,10 @@
     if (miniW === 0) resizeMinimap();
     if (miniW === 0) return;
 
+    // Header reflects the current layer (charts are per-layer).
+    const headerEl = document.getElementById('map-header');
+    if (headerEl) headerEl.textContent = `Chart — ${LAYER_NAMES[state.layer]}`;
+
     // Parchment background tone (the card itself is parchment; this is the "sea")
     miniCtx.fillStyle = 'rgba(232, 218, 188, 1)';
     miniCtx.fillRect(0, 0, miniW, miniH);
@@ -2809,6 +3050,51 @@
   const distEl = document.getElementById('distance-val');
   const countEl = document.getElementById('discovered-count');
   const needleEl = document.getElementById('needle');
+  const altitudeEl = document.getElementById('altitude-val');
+  const ascendBtn = document.getElementById('ascend-btn');
+  const descendBtn = document.getElementById('descend-btn');
+  const altimeterEl = document.getElementById('altimeter');
+  const transitionVeilEl = document.getElementById('transition-veil');
+  const transitionLabelEl = document.getElementById('transition-label');
+
+  // Build the altimeter notches once (one per layer, top = highest).
+  function buildAltimeter() {
+    altimeterEl.innerHTML = '';
+    for (let i = 0; i < LAYER_COUNT; i++) {
+      const n = document.createElement('div');
+      n.className = 'notch';
+      n.dataset.layer = String(i);
+      altimeterEl.appendChild(n);
+    }
+  }
+  buildAltimeter();
+
+  function updateAltitudeUI() {
+    if (!state) return;
+    const layer = state.layer;
+    altitudeEl.textContent = LAYER_NAMES[layer];
+    // Highlight current notch
+    for (const n of altimeterEl.children) {
+      n.classList.toggle('active', Number(n.dataset.layer) === layer);
+    }
+    // Disable buttons at edges or while transitioning
+    const tr = !!state.transition;
+    ascendBtn.disabled = tr || layer === 0;
+    descendBtn.disabled = tr || layer === LAYER_COUNT - 1;
+    // Veil & label during transition
+    if (tr) {
+      const alpha = transitionVeilAlpha();
+      transitionVeilEl.style.opacity = String(alpha * 0.92);
+      transitionVeilEl.classList.toggle('active', alpha > 0.05);
+      transitionLabelEl.textContent =
+        state.transition.direction < 0 ? 'Ascending…' : 'Descending…';
+      transitionLabelEl.style.opacity = String(alpha);
+    } else {
+      transitionVeilEl.style.opacity = '0';
+      transitionVeilEl.classList.remove('active');
+      transitionLabelEl.style.opacity = '0';
+    }
+  }
 
   function compassDir(rad) {
     // rad: 0 = east. Convert to compass with N at top.
@@ -2840,6 +3126,7 @@
     }
     const disc = state.islands.filter(i => i.discovered).length;
     countEl.textContent = `${disc} / ${state.islands.length} isles`;
+    updateAltitudeUI();
   }
 
   // ----- Loop -----
@@ -2945,11 +3232,14 @@
           },
           setTarget(x, y, name = null) { state.target = { x, y, name }; },
           clearTarget() { state.target = null; },
+          ascend, descend, beginTransition,
+          get saveKey() { return SAVE_KEY; },
           constants: {
             WORLD, ISLAND_COUNT, MIN_ISLAND_DIST,
             REVEAL_RADIUS, DEDUP_RADIUS, REVEAL_STEP, FOG_SCALE,
             DISCOVERY_RADIUS,
             SHIP_MAX_SPEED, SHIP_ACCEL, SHIP_DRAG, SHIP_TURN_RATE,
+            LAYER_NAMES, LAYER_COUNT, DEFAULT_LAYER, TRANSITION_DUR,
           },
         },
       };
@@ -3004,6 +3294,7 @@
     if (!menuBtn || !menuPanel) return;
 
     function startVoyage(mapSize) {
+      localStorage.removeItem(SAVE_KEY);
       localStorage.removeItem('skybound-poc-v2');
       state = newState(mapSize);
       camera.x = state.ship.x;

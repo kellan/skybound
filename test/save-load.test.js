@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { bootGame } from './helpers/harness.js';
 
-const SAVE_KEY = 'skybound-poc-v2';
+const SAVE_KEY = 'skybound-poc-v3';
 
 test('save/load: round-trip preserves seed, islands, ship, target, reveals', async () => {
   // Boot a fresh game, mutate state, save.
@@ -32,8 +32,11 @@ test('save/load: round-trip preserves seed, islands, ship, target, reveals', asy
   const h2 = await bootGame({ savedState: saved });
   try {
     const g = h2.game;
+    const savedLayer = saved.layers[saved.layer];
     assert.equal(g.state.seed, saved.seed, 'seed restored');
-    assert.equal(g.state.islands.length, saved.islands.length, 'island count restored');
+    assert.equal(g.state.layer, saved.layer, 'current layer restored');
+    assert.equal(g.state.layers.length, saved.layers.length, 'layer count restored');
+    assert.equal(g.state.islands.length, savedLayer.islands.length, 'island count restored');
     assert.equal(g.state.islands[0].discovered, true, 'discovery state restored (island 0)');
     assert.equal(g.state.islands[5].discovered, true, 'discovery state restored (island 5)');
     assert.equal(g.state.islands[1].discovered, false, 'undiscovered island stays undiscovered');
@@ -45,11 +48,11 @@ test('save/load: round-trip preserves seed, islands, ship, target, reveals', asy
     assert.ok(g.state.target, 'target restored');
     assert.equal(g.state.target.name, 'Test Atoll');
 
-    assert.equal(g.state.reveals.length, saved.reveals.length, 'reveal count restored');
+    assert.equal(g.state.reveals.length, savedLayer.reveals.length, 'reveal count restored');
 
     // Most important: the dedup grid was rebuilt from the loaded reveals.
     const T = g._test;
-    for (const r of saved.reveals) {
+    for (const r of savedLayer.reveals) {
       assert.equal(T.hasNearbyStamp(r.x, r.y), true,
         `reveal at (${r.x},${r.y}) indexed in dedup grid after load`);
     }

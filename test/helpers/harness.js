@@ -39,7 +39,7 @@ export async function bootGame(opts = {}) {
       installCanvasShim(window);
 
       if (savedState) {
-        window.localStorage.setItem('skybound-poc-v2', JSON.stringify(savedState));
+        window.localStorage.setItem('skybound-poc-v3', JSON.stringify(savedState));
       }
 
       // Viewport
