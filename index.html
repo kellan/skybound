@@ -1030,11 +1030,14 @@
   // The save format is versioned by `schemaVersion` inside the payload. When
   // the shape changes: bump SAVE_SCHEMA and add an upgrade step below. Never
   // bump the localStorage key — that strands every existing save.
-  const SAVE_SCHEMA = 3;
+  const SAVE_SCHEMA = 4;
   const LEGACY_SAVE_KEY = 'skybound-poc-v2';
 
   // Each entry upgrades a save from that version to the next one.
   const SAVE_MIGRATIONS = {
+    // v3 → v4 (rumors): track which islands' noodle houses have already
+    // shared their gossip this voyage. Old saves simply haven't asked yet.
+    3: (old) => ({ ...old, rumors: [] }),
     // v2 → v3 (altitude layers): v2 saves are flat — top-level islands and
     // reveals, no layers. The old world becomes the middle layer (where all
     // v2 play happened); the other layers are generated fresh from the seed
@@ -1088,6 +1091,7 @@
         parsed = migrateSave(parsed);
         if (!parsed.mapSize) parsed.mapSize = 'small';
         if (!parsed.shipType) parsed.shipType = 'cloudGalleon';
+        if (!Array.isArray(parsed.rumors)) parsed.rumors = [];
         if (parsed.ship && parsed.ship.facingLeft == null) parsed.ship.facingLeft = false;
         if (parsed.layer == null) parsed.layer = DEFAULT_LAYER;
         if (!parsed.layers || !Array.isArray(parsed.layers) || parsed.layers.length !== LAYER_COUNT) {
@@ -1202,6 +1206,7 @@
       mapSize,
       layer: DEFAULT_LAYER,
       layers,
+      rumors: [],
       ship: {
         x: start.x + 60, y: start.y + 60,
         vx: 0, vy: 0,
@@ -1236,6 +1241,7 @@
       ship: { x: s.ship.x, y: s.ship.y, vx: 0, vy: 0, heading: s.ship.heading, facingLeft: !!s.ship.facingLeft },
       shipType: s.shipType || 'cloudGalleon',
       target: s.target,
+      rumors: s.rumors || [],
     };
   }
 
@@ -2341,11 +2347,13 @@
           clearTarget() { state.target = null; },
           ascend, descend, beginTransition,
           openVillage, closeVillage, villageSeedFor, villageBuildingCount,
+          askRumorAt, rumorKey,
           setVillageLoader(fn) { villageLoader = fn; },
           get villageOpen() { return villageOpen; },
           get villageView() { return villageView; },
           get saveKey() { return SAVE_KEY; },
           constants: {
+            SAVE_SCHEMA,
             WORLD, ISLAND_COUNT, MIN_ISLAND_DIST,
             REVEAL_RADIUS, DEDUP_RADIUS, REVEAL_STEP, FOG_SCALE,
             DISCOVERY_RADIUS,
@@ -2584,6 +2592,43 @@
     return villageModulePromise;
   };
 
+  // ----- Rumors: the first real thing to do ashore -----
+  // Ask at a village's Noodle House and a sailor points out the nearest
+  // isle you haven't found: the fog parts over it on the map. Once per
+  // island per voyage (tracked in the save as `rumors`); discovering the
+  // isle — its name, the log count — still takes sailing there.
+  function rumorKey(island) {
+    return `${state.layer}:${Math.round(island.x)},${Math.round(island.y)}`;
+  }
+
+  function askRumorAt(island) {
+    if (state.rumors.includes(rumorKey(island))) {
+      return { ok: false, message: 'No fresh gossip here — the pot’s been scraped. Try another port.' };
+    }
+    let best = null, bestD = Infinity;
+    for (const i of state.islands) {
+      if (i.discovered || i === island) continue;
+      const d = Math.hypot(i.x - island.x, i.y - island.y);
+      if (d < bestD) { bestD = d; best = i; }
+    }
+    if (!best) {
+      return { ok: false, message: 'Every isle at this altitude is already on your chart.' };
+    }
+    state.rumors.push(rumorKey(island));
+    // Part the fog over the rumored isle (a little wider than one stamp so
+    // the whole blob shows through).
+    stampReveal(best.x, best.y);
+    stampReveal(best.x - REVEAL_RADIUS * 0.55, best.y);
+    stampReveal(best.x + REVEAL_RADIUS * 0.55, best.y);
+    saveState();
+    const dir = compassDir(Math.atan2(best.y - island.y, best.x - island.x)).split(' ')[0];
+    window.__DBG?.push('info', `rumor at ${island.name}: fog parted near (${Math.round(best.x)}, ${Math.round(best.y)})`);
+    return {
+      ok: true,
+      message: `Over noodles, a sailor swears there’s an isle to the ${dir}, some ${Math.round(bestD)} lg out. The fog has parted over it on your chart.`,
+    };
+  }
+
   async function openVillage(island) {
     if (villageOpen || !island) return;
     villageOpen = true;
@@ -2602,6 +2647,9 @@
         // The island's identity shapes its village: name modifiers pick the
         // terrain/props theme, the altitude layer tints the whole palette.
         character: { modifiers: island.modifiers || [], layer: state.layer },
+        // Building actions — the game grows into the card from here.
+        actionFor: (kind) => (kind === 'mushroom' ? { label: 'Ask for rumors' } : null),
+        onAction: (kind) => (kind === 'mushroom' ? askRumorAt(island) : null),
       });
       // Match the overlay to the village's themed sky (dusk isles land at dusk).
       if (villageView.skyColor) villageOverlay.style.background = villageView.skyColor;

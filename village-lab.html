@@ -148,7 +148,13 @@
     layerInput.addEventListener("change", () => view.regenerate(seed, count, character()));
 
     try {
-      view = createVillageView({ root: stage, seed, count, character: character(), cardHint: "lab stub — game panel lives here" });
+      view = createVillageView({
+        root: stage, seed, count, character: character(),
+        cardHint: "lab stub — game panel lives here",
+        // Mirror the game's Noodle House action so the card UI is iterable here.
+        actionFor: (kind) => (kind === "mushroom" ? { label: "Ask for rumors" } : null),
+        onAction: () => ({ message: "A sailor leans in… but the lab has no chart to part fog on. In the game this reveals the nearest unfound isle." }),
+      });
     } catch (e) {
       const fb = document.getElementById("fallback");
       fb.textContent = "3D view unavailable in this browser: " + (e.message || e);

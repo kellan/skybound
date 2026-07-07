@@ -55,7 +55,8 @@ test('migration: a legacy v2 save is upgraded to the layered format', async () =
     const raw = h.window.localStorage.getItem(SAVE_KEY);
     assert.ok(raw, 'migrated save written under current key');
     const persisted = JSON.parse(raw);
-    assert.equal(persisted.schemaVersion, 3, 'schemaVersion stamped');
+    assert.equal(persisted.schemaVersion, T.constants.SAVE_SCHEMA, 'schemaVersion stamped');
+    assert.deepEqual(persisted.rumors, [], 'v2→v4 chain adds the rumor ledger');
     assert.equal(persisted.layers[persisted.layer].islands[0].name, 'Emberwatch');
     assert.equal(h.window.localStorage.getItem(LEGACY_KEY), null, 'legacy key removed');
   } finally { h.close(); }
@@ -80,7 +81,7 @@ test('migration: current-schema saves load without a migration pass', async () =
   try {
     h1.game._test.saveState();
     saved = JSON.parse(h1.window.localStorage.getItem(SAVE_KEY));
-    assert.equal(saved.schemaVersion, 3);
+    assert.equal(saved.schemaVersion, h1.game._test.constants.SAVE_SCHEMA);
   } finally { h1.close(); }
 
   const h2 = await bootGame({ savedState: saved });

@@ -80,7 +80,22 @@ const CSS = `
 }
 .vv-card .vv-card-icon { font-size: 30px; line-height: 1.2; }
 .vv-card .vv-card-name { font-size: 15px; font-weight: 700; color: ${UI.ink}; margin-top: 2px; }
-.vv-card .vv-card-hint { font-size: 10px; font-style: italic; color: ${UI.inkSoft}; margin-top: 4px; }
+.vv-card .vv-card-hint { font-size: 11px; font-style: italic; color: ${UI.inkSoft}; margin-top: 4px; line-height: 1.45; }
+.vv-card { max-width: 240px; }
+.vv-card .vv-card-action {
+  display: none;
+  margin: 8px auto 0;
+  padding: 7px 16px;
+  background: ${UI.ink};
+  color: ${UI.paper};
+  border: none;
+  border-radius: 8px;
+  font-family: inherit;
+  font-size: 12px;
+  letter-spacing: 0.06em;
+  cursor: pointer;
+}
+.vv-card .vv-card-action:active { transform: translateY(1px); }
 `;
 
 function ensureStyles(doc) {
@@ -100,7 +115,15 @@ function ensureStyles(doc) {
  *   setLabelsVisible(bool)              — toggle the floating icon bubbles
  *   dispose()                           — tear down GL context, DOM, listeners
  */
-export function createVillageView({ root, seed = 1, count = 6, character = {}, cardHint = "game panel coming soon" }) {
+export function createVillageView({
+  root, seed = 1, count = 6, character = {},
+  cardHint = "game panel coming soon",
+  // Game hooks: actionFor(kind) -> {label} | null puts a button on the
+  // building card; onAction(kind, building) runs it and may return
+  // {message} (or a string) to show on the card.
+  actionFor = () => null,
+  onAction = () => null,
+}) {
   const doc = root.ownerDocument;
   const win = doc.defaultView;
   ensureStyles(doc);
@@ -116,11 +139,26 @@ export function createVillageView({ root, seed = 1, count = 6, character = {}, c
   card.className = "vv-card";
   card.innerHTML =
     '<div class="vv-card-icon"></div><div class="vv-card-name"></div>' +
-    `<div class="vv-card-hint"></div>`;
+    '<div class="vv-card-hint"></div><button class="vv-card-action"></button>';
   card.querySelector(".vv-card-hint").textContent = cardHint;
   const cardIcon = card.querySelector(".vv-card-icon");
   const cardName = card.querySelector(".vv-card-name");
+  const cardHintEl = card.querySelector(".vv-card-hint");
+  const cardActionBtn = card.querySelector(".vv-card-action");
   root.append(mount, labelsContainer, picker, card);
+
+  cardActionBtn.addEventListener("click", (e) => {
+    e.stopPropagation();
+    if (!selected) return;
+    const result = onAction(selected.userData.kind, selected);
+    const message = typeof result === "string" ? result : result && result.message;
+    if (message) {
+      cardHintEl.textContent = message;
+      // One shot per visit to the card; reselecting re-offers the action.
+      cardActionBtn.style.display = "none";
+      placeCard();
+    }
+  });
 
   // --- Renderer / scene / camera ---
   const scene = new THREE.Scene();
@@ -268,14 +306,28 @@ export function createVillageView({ root, seed = 1, count = 6, character = {}, c
     el.style.top = `${Math.max(8, y - rect.height - lift)}px`;
   }
 
+  let lastCardPos = null;
+  function placeCard() {
+    if (lastCardPos) placeOver(card, lastCardPos.x, lastCardPos.y, 18);
+  }
+
   function selectBuilding(building, x, y) {
     deselectBuilding();
     selected = building;
     building.scale.setScalar(1.07);
     cardIcon.textContent = building.userData.icon;
     cardName.textContent = KIND_NAMES[building.userData.kind] || building.userData.kind;
+    cardHintEl.textContent = cardHint;
+    const action = actionFor(building.userData.kind);
+    if (action) {
+      cardActionBtn.textContent = action.label;
+      cardActionBtn.style.display = "inline-block";
+    } else {
+      cardActionBtn.style.display = "none";
+    }
     card.style.display = "block";
-    placeOver(card, x, y, 18);
+    lastCardPos = { x, y };
+    placeCard();
   }
 
   function deselectBuilding() {
