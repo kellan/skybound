@@ -7,7 +7,7 @@ Open `index.html` in a browser, or play the deployed version via GitHub Pages.
 ## Repo layout
 
 - `index.html` — the game. Everything (CSS, HTML, JS) lives in this file, except the ship art.
-- `ships.js` — the shipped ship drawers, shared by the game and the ship lab so the two can't drift apart. Loaded as a classic script (no build step, works over `file://`).
+- `ships.js` / `islands.js` — the shipped ship and island drawers, shared by the game and the labs so they can't drift apart. Loaded as classic scripts (no build step, works over `file://`).
 - `ship-lab.html` — standalone workbench for iterating on ship art and animation. Try designs here first; promote them into `ships.js` once they read right.
 - `island-lab.html` — same idea for island shapes and name-modifier visuals.
 - `test/` — Node test suite (JSDOM harness that boots the real `index.html`).

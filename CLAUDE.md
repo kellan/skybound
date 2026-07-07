@@ -1,8 +1,8 @@
 # Notes for Claude
 
-## Ship art and animation
+## Ship and island art
 
-Iterate on ship art and animation in `ship-lab.html` first. Once a design reads right in the lab, promote it into `ships.js` — the shared drawer file both the game and the lab render from. Don't add drawing code for shipped designs to `index.html` or copy drawers between files; `ships.js` is the single source of truth, and the lab keeps its own local drawers only for experiments that haven't shipped.
+Iterate on art and animation in the labs first (`ship-lab.html` for ships, `island-lab.html` for islands). Once a design reads right, promote it into the shared drawer file — `ships.js` or `islands.js` — which both the game and the labs render from. Don't add drawing code for shipped designs to `index.html` or copy drawers between files; the shared files are the single source of truth, and the labs keep local drawers only for experiments that haven't shipped. Island drawers render in blob-local space (center origin, baseline radius 36, `br` 0..1 breeze strength); callers place/scale via canvas transform.
 
 ## Preview links
 
