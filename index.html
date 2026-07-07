@@ -742,8 +742,10 @@
       if (pill) pill.classList.remove('show');
     });
     byId('dbg-wipe')?.addEventListener('click', () => {
-      try { localStorage.removeItem('skybound-poc-v2'); DBG.push('info', 'localStorage wiped'); }
-      catch(e) { DBG.push('err', 'wipe failed: ' + e.message); }
+      // The game IIFE owns the save key; go through its debug surface so this
+      // can't drift out of sync with SAVE_KEY again.
+      if (window.__game) window.__game.wipeSave();
+      else DBG.push('warn', 'game not booted');
     });
     byId('dbg-teleport')?.addEventListener('click', () => {
       if (window.__game) window.__game.teleportRandom();
@@ -938,7 +940,11 @@
         parsed.reveals = parsed.layers[parsed.layer].reveals;
         parsed.transition = null; // never resume mid-transition
         return parsed;
-      } catch(e) {}
+      } catch(e) {
+        // A corrupt or shape-mismatched save falls back to a new game; leave
+        // a trace so the discarded save is debuggable in the field.
+        window.__DBG?.push('err', 'save load failed, starting fresh: ' + (e.message || e));
+      }
     }
     // Old v2 saves are incompatible with the layered world; clear them.
     try { localStorage.removeItem('skybound-poc-v2'); } catch(e) {}
@@ -3206,6 +3212,13 @@
           bakeFog();
           DBG?.push('info', `revealed all (${state.reveals.length} stamps)`);
         },
+        wipeSave() {
+          try {
+            localStorage.removeItem(SAVE_KEY);
+            localStorage.removeItem('skybound-poc-v2'); // legacy key
+            DBG?.push('info', 'save wiped (' + SAVE_KEY + ')');
+          } catch(e) { DBG?.push('err', 'wipe failed: ' + (e.message || e)); }
+        },
         // Internals surfaced for the test harness. Intentionally minimal —
         // tests use this; production code shouldn't.
         _test: {
@@ -3301,6 +3314,9 @@
       camera.y = state.ship.y;
       lastRevealX = state.ship.x; lastRevealY = state.ship.y;
       bakeFog();
+      // Persist right away — the 1.5s auto-save window is long enough to lose
+      // a fresh voyage if the app closes immediately after this.
+      saveState();
       window.__DBG?.push('info', `new ${mapSize} voyage`);
     }
 
