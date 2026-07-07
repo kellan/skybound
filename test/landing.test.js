@@ -9,7 +9,7 @@ import { bootGame } from './helpers/harness.js';
 function stubLoader(win, calls) {
   return () => Promise.resolve({
     createVillageView(opts) {
-      calls.push({ type: 'create', seed: opts.seed, count: opts.count, root: opts.root });
+      calls.push({ type: 'create', seed: opts.seed, count: opts.count, root: opts.root, character: opts.character });
       return { dispose() { calls.push({ type: 'dispose' }); } };
     },
   });
@@ -62,6 +62,9 @@ test('landing: overlay opens with a deterministic per-island village and closes 
     assert.equal(calls[0].seed, T.villageSeedFor(isle), 'seeded from the island');
     assert.equal(calls[0].count, T.villageBuildingCount(isle));
     assert.ok(calls[0].count >= 3 && calls[0].count <= 9, 'count within village range');
+    // The island's identity travels with the landing.
+    assert.deepEqual(calls[0].character.modifiers, isle.modifiers, 'modifiers passed through');
+    assert.equal(calls[0].character.layer, g.state.layer, 'altitude layer passed through');
 
     // Opening twice is a no-op while ashore.
     await T.openVillage(isle);

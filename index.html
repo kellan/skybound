@@ -2232,6 +2232,14 @@
   let lastDt = 0;
   function loop(now) {
     frameCount++;
+    // While ashore the 3D village owns the screen; don't burn battery
+    // simulating and painting a map nobody can see. The ship is docked, so
+    // nothing on the map needs to advance.
+    if (villageOpen) {
+      lastT = now;
+      requestAnimationFrame(loop);
+      return;
+    }
     try {
       let dt = (now - lastT) / 1000;
       if (dt > 0.1) dt = 0.1;
@@ -2335,6 +2343,7 @@
           openVillage, closeVillage, villageSeedFor, villageBuildingCount,
           setVillageLoader(fn) { villageLoader = fn; },
           get villageOpen() { return villageOpen; },
+          get villageView() { return villageView; },
           get saveKey() { return SAVE_KEY; },
           constants: {
             WORLD, ISLAND_COUNT, MIN_ISLAND_DIST,
@@ -2590,7 +2599,12 @@
         root: villageStage,
         seed: villageSeedFor(island),
         count: villageBuildingCount(island),
+        // The island's identity shapes its village: name modifiers pick the
+        // terrain/props theme, the altitude layer tints the whole palette.
+        character: { modifiers: island.modifiers || [], layer: state.layer },
       });
+      // Match the overlay to the village's themed sky (dusk isles land at dusk).
+      if (villageView.skyColor) villageOverlay.style.background = villageView.skyColor;
       villageStatusEl.style.display = 'none';
       window.__DBG?.push('info', `ashore at ${island.name} (village seed ${villageSeedFor(island)})`);
     } catch (e) {
@@ -2605,6 +2619,7 @@
     villageOpen = false;
     if (villageView) { villageView.dispose(); villageView = null; }
     villageStatusEl.style.display = 'none';
+    villageOverlay.style.background = '';
     villageOverlay.classList.remove('open');
     villageOverlay.setAttribute('aria-hidden', 'true');
   }

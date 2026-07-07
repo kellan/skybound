@@ -5,17 +5,19 @@ import * as THREE from "../vendor/three.module.js";
 import { mulberry32, range, shuffle } from "./rng.js";
 import { World, ISLAND_RADIUS, WATER_Y, RIVER_HALF_WIDTH } from "./world.js";
 import { BUILDERS, BUILDING_KINDS } from "./buildings.js";
-import { buildGrowth, roundTree, pineTree, rock, lilyPad, buildBridge } from "./decor.js";
+import { buildGrowth, rock, lilyPad, buildBridge, warBanner, mineAdit, treeMakerFor } from "./decor.js";
+import { themeFor } from "./theme.js";
 
 const BUILD_RADIUS = 4.6; // buildings stay inside this ring
 const RIVER_MARGIN = 1.15; // buildings keep this far from the river center
 const MIN_SPACING = 1.75;
 
 export class Village {
-  constructor(scene, seed, count) {
+  constructor(scene, seed, count, theme = themeFor()) {
     this.scene = scene;
     this.seed = seed;
-    this.world = new World(seed);
+    this.theme = theme;
+    this.world = new World(seed, theme.colors, theme.terrain);
     this.world.addTo(scene);
 
     this.group = new THREE.Group(); // everything except terrain/water
@@ -26,6 +28,7 @@ export class Village {
     const rng = mulberry32(seed);
     this._placeBuildings(rng, count);
     this._placeScenery(rng);
+    this._placeProps(rng);
     this._placeLilyPads(rng);
     this._placeBridge();
   }
@@ -95,39 +98,67 @@ export class Village {
     }
   }
 
-  _placeScenery(rng) {
-    const occupied = (x, z, margin) =>
-      this.buildings.some((b) => Math.hypot(b.userData.coord.x - x, b.userData.coord.z - z) < margin);
+  // Rejection-sample a clear spot; shared by scenery scatter and props.
+  _findSpot(rng, rMin, rMax, riverMargin, buildMargin, tries = 80) {
+    for (let i = 0; i < tries; i++) {
+      const r = range(rng, rMin, rMax);
+      const theta = rng() * Math.PI * 2;
+      const x = Math.cos(theta) * r;
+      const z = Math.sin(theta) * r;
+      if (this.world.distToRiver(x, z) < riverMargin) continue;
+      if (this.buildings.some((b) => Math.hypot(b.userData.coord.x - x, b.userData.coord.z - z) < buildMargin)) continue;
+      return { x, z };
+    }
+    return null;
+  }
 
+  _placeScenery(rng) {
+    const mix = this.theme.scatter; // island character thins or thickens the growth
     const scatter = (n, rMin, rMax, riverMargin, buildMargin, make) => {
-      let placed = 0;
-      let attempts = 0;
-      while (placed < n && attempts < n * 60) {
-        attempts++;
-        const r = range(rng, rMin, rMax);
-        const theta = rng() * Math.PI * 2;
-        const x = Math.cos(theta) * r;
-        const z = Math.sin(theta) * r;
-        if (this.world.distToRiver(x, z) < riverMargin) continue;
-        if (occupied(x, z, buildMargin)) continue;
+      for (let placed = 0; placed < n; placed++) {
+        const spot = this._findSpot(rng, rMin, rMax, riverMargin, buildMargin, 60);
+        if (!spot) continue;
         const item = make(rng);
-        item.position.set(x, this.world.heightAt(x, z) - 0.02, z);
+        item.position.set(spot.x, this.world.heightAt(spot.x, spot.z) - 0.02, spot.z);
         item.rotation.y = rng() * Math.PI * 2;
         this.group.add(item);
-        placed++;
       }
     };
 
-    scatter(7, 4.4, 6.4, 0.9, 1.4, (r) => (r() < 0.55 ? roundTree(r) : pineTree(r)));
-    scatter(3, 1.5, 4.4, 0.95, 1.5, (r) => (r() < 0.5 ? roundTree(r) : pineTree(r)));
-    scatter(8, 1, 6.2, 0.85, 1.2, rock);
+    const tree = treeMakerFor(this.theme.flora);
+    scatter(Math.round(7 * mix.trees), 4.4, 6.4, 0.9, 1.4, tree);
+    scatter(Math.round(3 * mix.trees), 1.5, 4.4, 0.95, 1.5, tree);
+    scatter(Math.round(8 * mix.rocks), 1, 6.2, 0.85, 1.2, rock);
     // Loose meadow tufts between the homesteads.
-    scatter(26, 0.5, 6.3, 0.8, 1.1, buildGrowthTuft);
+    scatter(Math.round(26 * mix.tufts), 0.5, 6.3, 0.8, 1.1, buildGrowthTuft);
+  }
+
+  // Character props: a war banner flying near the heart of a helm isle,
+  // a mine adit worked into the outskirts of a glen isle.
+  _placeProps(rng) {
+    const BUILDERS_BY_PROP = {
+      banner: { make: warBanner, rMin: 0.8, rMax: 3.2, buildMargin: 1.0, faceCenter: false },
+      mine: { make: mineAdit, rMin: 4.4, rMax: 5.9, buildMargin: 1.6, faceCenter: true },
+    };
+    for (const prop of this.theme.props) {
+      const spec = BUILDERS_BY_PROP[prop];
+      if (!spec) continue;
+      const spot = this._findSpot(rng, spec.rMin, spec.rMax, 1.0, spec.buildMargin, 120);
+      if (!spot) continue;
+      const item = spec.make(rng);
+      item.position.set(spot.x, this.world.heightAt(spot.x, spot.z) - 0.02, spot.z);
+      if (spec.faceCenter) item.lookAt(0, item.position.y, 0);
+      else item.rotation.y = rng() * Math.PI * 2;
+      this.group.add(item);
+    }
   }
 
   _placeLilyPads(rng) {
     const line = this.world.riverMain;
-    const spots = [0.3, 0.55, 0.72];
+    // Tidewashed isles grow a thicker mat of pads.
+    const spots = this.theme.extraLilyPads
+      ? [0.18, 0.3, 0.42, 0.55, 0.64, 0.72, 0.84]
+      : [0.3, 0.55, 0.72];
     spots.forEach((t, i) => {
       const p = line[Math.floor(line.length * t)];
       if (Math.hypot(p.x, p.z) > ISLAND_RADIUS - 0.8) return;

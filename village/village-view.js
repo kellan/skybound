@@ -9,8 +9,9 @@
 
 import * as THREE from "./vendor/three.module.js";
 import { OrbitControls } from "./vendor/OrbitControls.js";
-import { PALETTE } from "./src/palette.js";
+import { PALETTE, UI } from "./src/palette.js";
 import { Village } from "./src/village.js";
+import { themeFor } from "./src/theme.js";
 
 const KIND_NAMES = {
   mushroom: "Noodle House",
@@ -37,8 +38,8 @@ const CSS = `
 .vv-label {
   position: absolute; left: 0; top: 0;
   pointer-events: auto; cursor: pointer;
-  background: #fff8e8;
-  border: 1.5px solid #6b5a3a;
+  background: ${UI.paper};
+  border: 1.5px solid ${UI.inkSoft};
   border-radius: 14px;
   padding: 4px 10px;
   font-size: 18px;
@@ -49,15 +50,15 @@ const CSS = `
   position: absolute; bottom: -6px; left: 50%;
   transform: translateX(-50%) rotate(45deg);
   width: 10px; height: 10px;
-  background: #fff8e8;
-  border-right: 1.5px solid #6b5a3a;
-  border-bottom: 1.5px solid #6b5a3a;
+  background: ${UI.paper};
+  border-right: 1.5px solid ${UI.inkSoft};
+  border-bottom: 1.5px solid ${UI.inkSoft};
 }
 .vv-picker {
   position: absolute; display: none;
   grid-template-columns: repeat(6, 1fr); gap: 2px; padding: 8px;
-  background: #fff8e8;
-  border: 1.5px solid #6b5a3a;
+  background: ${UI.paper};
+  border: 1.5px solid ${UI.inkSoft};
   border-radius: 12px;
   box-shadow: 3px 4px 0 rgba(0,0,0,0.12);
   z-index: 10;
@@ -70,16 +71,16 @@ const CSS = `
 .vv-card {
   position: absolute; display: none;
   min-width: 170px; padding: 12px 16px;
-  background: #fff8e8;
-  border: 1.5px solid #6b5a3a;
+  background: ${UI.paper};
+  border: 1.5px solid ${UI.inkSoft};
   border-radius: 12px;
   box-shadow: 3px 4px 0 rgba(0,0,0,0.12);
   z-index: 9; text-align: center;
   font-family: "Iowan Old Style", "Palatino Linotype", Georgia, serif;
 }
 .vv-card .vv-card-icon { font-size: 30px; line-height: 1.2; }
-.vv-card .vv-card-name { font-size: 15px; font-weight: 700; color: #3a2a14; margin-top: 2px; }
-.vv-card .vv-card-hint { font-size: 10px; font-style: italic; color: #6b5a3a; margin-top: 4px; }
+.vv-card .vv-card-name { font-size: 15px; font-weight: 700; color: ${UI.ink}; margin-top: 2px; }
+.vv-card .vv-card-hint { font-size: 10px; font-style: italic; color: ${UI.inkSoft}; margin-top: 4px; }
 `;
 
 function ensureStyles(doc) {
@@ -92,12 +93,14 @@ function ensureStyles(doc) {
 
 /**
  * Mount a village diorama inside `root` (which should be sized by the
- * caller; the view fills it). Returns a handle:
- *   regenerate(seed, count)  — rebuild the village in place
- *   setLabelsVisible(bool)   — toggle the floating icon bubbles
- *   dispose()                — tear down GL context, DOM, listeners
+ * caller; the view fills it). `character` carries the island's identity —
+ * { modifiers: [...], layer: 0|1|2 } — and themes terrain, scenery and
+ * props (see src/theme.js). Returns a handle:
+ *   regenerate(seed, count, character)  — rebuild the village in place
+ *   setLabelsVisible(bool)              — toggle the floating icon bubbles
+ *   dispose()                           — tear down GL context, DOM, listeners
  */
-export function createVillageView({ root, seed = 1, count = 6, cardHint = "game panel coming soon" }) {
+export function createVillageView({ root, seed = 1, count = 6, character = {}, cardHint = "game panel coming soon" }) {
   const doc = root.ownerDocument;
   const win = doc.defaultView;
   ensureStyles(doc);
@@ -147,8 +150,10 @@ export function createVillageView({ root, seed = 1, count = 6, cardHint = "game 
   controls.maxDistance = 24;
   controls.maxPolarAngle = Math.PI * 0.46;
 
-  // --- Warm afternoon light ---
-  scene.add(new THREE.HemisphereLight(0xfff2d8, 0xb8a878, 0.85));
+  // --- Light rig: retuned per theme in regenerate (each altitude layer has
+  // its own weather — see LAYER_LIGHT in src/theme.js) ---
+  const hemi = new THREE.HemisphereLight(0xfff2d8, 0xb8a878, 0.85);
+  scene.add(hemi);
   const sun = new THREE.DirectionalLight(0xffeecb, 1.9);
   sun.position.set(6, 10, 4);
   sun.castShadow = true;
@@ -160,13 +165,30 @@ export function createVillageView({ root, seed = 1, count = 6, cardHint = "game 
   sun.shadow.bias = -0.0004;
   scene.add(sun);
 
-  const state = { seed, count, showLabels: true, village: null };
+  function applyLight(light) {
+    sun.color.set(light.sunColor);
+    sun.intensity = light.sunIntensity;
+    sun.position.set(...light.sunPosition);
+    hemi.color.set(light.hemiSky);
+    hemi.groundColor.set(light.hemiGround);
+    hemi.intensity = light.hemiIntensity;
+  }
 
-  function regenerate(newSeed = state.seed, newCount = state.count) {
+  const state = { seed, count, character, showLabels: true, village: null };
+
+  function regenerate(newSeed = state.seed, newCount = state.count, newCharacter = state.character) {
     state.seed = newSeed;
     state.count = newCount;
+    state.character = newCharacter;
+    const theme = themeFor(state.character);
+    state.skyColor = theme.colors.sky; // callers match their chrome to the weather
+    scene.background = new THREE.Color(theme.colors.sky);
+    // Fog distances scale with the same fit factor as the camera, so portrait
+    // phones (camera pulled back ~2x) don't drown the diorama in fog.
+    scene.fog = new THREE.Fog(theme.colors.sky, theme.light.fogNear * fit, theme.light.fogFar * fit);
+    applyLight(theme.light);
     if (state.village) state.village.dispose();
-    state.village = new Village(scene, state.seed, state.count);
+    state.village = new Village(scene, state.seed, state.count, theme);
     syncLabelCount(0); // force label rebuild for new building set
     hidePicker();
     deselectBuilding();
@@ -429,6 +451,7 @@ export function createVillageView({ root, seed = 1, count = 6, cardHint = "game 
     renderer,
     controls,
     regenerate,
+    get skyColor() { return state.skyColor; },
     setLabelsVisible(v) { state.showLabels = !!v; },
     dispose,
   };

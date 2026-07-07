@@ -48,8 +48,10 @@ function distToPolyline(x, z, pts) {
 }
 
 export class World {
-  constructor(seed) {
+  constructor(seed, colors = PALETTE, terrain = {}) {
     this.seed = seed;
+    this.colors = colors; // PALETTE-shaped; themes override terrain/water keys
+    this.hillAmp = terrain.hillAmp ?? 1; // relief multiplier (layer character)
     const rng = mulberry32(seed * 7919 + 13);
 
     // Rolling-hill noise phases, fixed per seed.
@@ -119,7 +121,7 @@ export class World {
   staticHeightAt(x, z) {
     const r = Math.hypot(x, z);
     const fade = smoothstep((ISLAND_RADIUS - r) / 1.4);
-    const base = (0.1 * this._hills(x, z) + 0.06) * fade;
+    const base = (0.1 * this.hillAmp * this._hills(x, z) + 0.06) * fade;
     const d = this.distToRiver(x, z);
     const carve = -RIVER_DEPTH * Math.exp(-(d * d) / (RIVER_HALF_WIDTH * RIVER_HALF_WIDTH));
     return base + carve;
@@ -155,11 +157,11 @@ export class World {
     this.isWall = new Uint8Array(count);
     const colors = new Float32Array(count * 3);
 
-    const grassLow = new THREE.Color(PALETTE.grassLow);
-    const grassHigh = new THREE.Color(PALETTE.grassHigh);
-    const sand = new THREE.Color(PALETTE.sand);
-    const dirt = new THREE.Color(PALETTE.dirt);
-    const dirtDeep = new THREE.Color(PALETTE.dirtDeep);
+    const grassLow = new THREE.Color(this.colors.grassLow);
+    const grassHigh = new THREE.Color(this.colors.grassHigh);
+    const sand = new THREE.Color(this.colors.sand);
+    const dirt = new THREE.Color(this.colors.dirt);
+    const dirtDeep = new THREE.Color(this.colors.dirtDeep);
     const c = new THREE.Color();
 
     const detail = mulberry32(this.seed * 131 + 7); // color speckle only
@@ -234,7 +236,7 @@ export class World {
     this.water = new THREE.Mesh(
       geom,
       new THREE.MeshLambertMaterial({
-        color: PALETTE.water,
+        color: this.colors.water,
         transparent: true,
         opacity: 0.88,
       })
@@ -248,7 +250,7 @@ export class World {
     geom.rotateX(Math.PI / 2);
     this.base = new THREE.Mesh(
       geom,
-      new THREE.MeshLambertMaterial({ color: PALETTE.dirtDeep })
+      new THREE.MeshLambertMaterial({ color: this.colors.dirtDeep })
     );
     this.base.position.y = SKIRT_BOTTOM;
   }

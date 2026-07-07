@@ -191,6 +191,82 @@ export function pineTree(rng) {
   return g;
 }
 
+// --- Flora variants: what grows depends on where the island floats ---
+
+export function snowPine(rng) {
+  // A pine wearing snow: each tier is a green cone with a white cap cone.
+  const g = new THREE.Group();
+  const trunkH = range(rng, 0.2, 0.3);
+  g.add(mesh(new THREE.CylinderGeometry(0.04, 0.06, trunkH, 7), lambert(PALETTE.woodDark), 0, trunkH / 2, 0));
+  let y = trunkH;
+  let r = range(rng, 0.28, 0.36);
+  for (let i = 0; i < 3; i++) {
+    const h = r * 1.3;
+    g.add(mesh(new THREE.ConeGeometry(r, h, 9), lambert("#4f7350", { flatShading: true }), 0, y + h * 0.42, 0));
+    const cap = mesh(new THREE.ConeGeometry(r * 0.82, h * 0.45, 9), lambert("#f4f6f2", { flatShading: true }), 0, y + h * 0.72, 0);
+    cap.castShadow = false;
+    g.add(cap);
+    y += h * 0.5;
+    r *= 0.72;
+  }
+  return g;
+}
+
+export function deadTree(rng, color = "#7a6a56") {
+  // A bare snag: leaning trunk with a few crooked branch spikes.
+  const g = new THREE.Group();
+  const h = range(rng, 0.5, 0.8);
+  const trunk = mesh(new THREE.CylinderGeometry(0.025, 0.05, h, 6), lambert(color, { flatShading: true }), 0, h / 2, 0);
+  trunk.rotation.z = range(rng, -0.12, 0.12);
+  g.add(trunk);
+  const branches = 2 + Math.floor(rng() * 3);
+  for (let i = 0; i < branches; i++) {
+    const bh = range(rng, 0.16, 0.3);
+    const b = mesh(new THREE.CylinderGeometry(0.008, 0.02, bh, 5), lambert(color, { flatShading: true }));
+    const theta = rng() * Math.PI * 2;
+    const at = range(rng, 0.45, 0.9) * h;
+    b.position.set(Math.cos(theta) * 0.05, at, Math.sin(theta) * 0.05);
+    b.rotation.set(Math.cos(theta) * range(rng, 0.7, 1.2), 0, Math.sin(theta) * range(rng, 0.7, 1.2));
+    g.add(b);
+  }
+  return g;
+}
+
+export function glowShroom(rng) {
+  // Oversized dusk mushroom with a softly glowing cap — reads best in the
+  // Hollow Deeps' low light.
+  const g = new THREE.Group();
+  const h = range(rng, 0.18, 0.32);
+  g.add(mesh(new THREE.CylinderGeometry(0.035, 0.055, h, 7), lambert("#d8cfae"), 0, h / 2, 0));
+  const cap = mesh(
+    new THREE.SphereGeometry(range(rng, 0.11, 0.17), 9, 7, 0, Math.PI * 2, 0, Math.PI / 2),
+    lambert("#8fd0c4", { emissive: 0x4fa08c, emissiveIntensity: 0.55 }),
+    0, h, 0
+  );
+  cap.scale.y = 0.65;
+  g.add(cap);
+  return g;
+}
+
+// Tree mix per flora kind; each returns a make(rng) suited to the theme.
+export function treeMakerFor(flora) {
+  switch (flora) {
+    case "alpine": // snowy pines with the odd bare snag, no leafy rounds
+      return (rng) => (rng() < 0.75 ? snowPine(rng) : deadTree(rng, "#8a7d6a"));
+    case "dusk": // gnarled snags and glowing shrooms under a low sun
+      return (rng) => {
+        const roll = rng();
+        if (roll < 0.4) return deadTree(rng, "#5c5060");
+        if (roll < 0.75) return glowShroom(rng);
+        return pineTree(rng);
+      };
+    case "charred": // ash isles keep only burnt snags
+      return (rng) => deadTree(rng, "#4e4238");
+    default: // temperate — the spike's original mix
+      return (rng) => (rng() < 0.55 ? roundTree(rng) : pineTree(rng));
+  }
+}
+
 export function rock(rng) {
   const m = mesh(
     new THREE.DodecahedronGeometry(range(rng, 0.07, 0.16)),
@@ -212,6 +288,79 @@ export function lilyPad(rng, withFlower) {
     bud.castShadow = false;
     g.add(bud);
   }
+  return g;
+}
+
+// --- Modifier props: what an island's name plants in its village ---
+// These mirror the 2D map art (islands.js): helm/mel isles fly a war banner,
+// glen/dell isles work a timber-framed mine.
+
+export function warBanner(rng) {
+  const g = new THREE.Group();
+  const poleH = range(rng, 1.15, 1.35);
+  g.add(mesh(new THREE.CylinderGeometry(0.022, 0.03, poleH, 6), lambert(PALETTE.woodDark), 0, poleH / 2, 0));
+  g.add(mesh(new THREE.SphereGeometry(0.035, 6, 5), lambert(PALETTE.lantern), 0, poleH + 0.02, 0));
+
+  // Swallow-tailed banner: a flat shape hung from the pole top.
+  const shape = new THREE.Shape();
+  const w = 0.52, h = 0.24, notch = 0.14;
+  shape.moveTo(0, 0);
+  shape.lineTo(w, 0);
+  shape.lineTo(w - notch, -h / 2);
+  shape.lineTo(w, -h);
+  shape.lineTo(0, -h);
+  shape.closePath();
+  const banner = new THREE.Mesh(
+    new THREE.ShapeGeometry(shape),
+    lambert(PALETTE.flag, { side: THREE.DoubleSide })
+  );
+  banner.position.set(0.03, poleH - 0.04, 0);
+  banner.rotation.y = range(rng, -0.25, 0.25);
+  banner.castShadow = true;
+  g.add(banner);
+
+  for (let i = 0; i < 3; i++) {
+    const r = rock(rng);
+    r.position.set(range(rng, -0.18, 0.18), 0.01, range(rng, -0.18, 0.18));
+    g.add(r);
+  }
+  return g;
+}
+
+export function mineAdit(rng) {
+  const g = new THREE.Group();
+  const postH = 0.34, width = 0.42;
+
+  // Dark opening set into the hillside behind the frame.
+  const mouth = mesh(new THREE.BoxGeometry(width, postH, 0.26), lambert("#241a10"), 0, postH / 2 - 0.02, -0.12);
+  mouth.castShadow = false;
+  g.add(mouth);
+
+  // Timber frame: two posts and a lintel, like the map art's adit.
+  for (const sx of [-width / 2, width / 2]) {
+    g.add(mesh(new THREE.BoxGeometry(0.06, postH, 0.06), lambert(PALETTE.wood), sx, postH / 2, 0));
+  }
+  g.add(mesh(new THREE.BoxGeometry(width + 0.16, 0.06, 0.08), lambert(PALETTE.woodDark), 0, postH + 0.02, 0));
+
+  // Hanging lantern under the lintel.
+  const lamp = mesh(
+    new THREE.SphereGeometry(0.035, 8, 6),
+    lambert(PALETTE.lantern, { emissive: 0xcc9933, emissiveIntensity: 0.8 }),
+    0, postH - 0.06, 0.02
+  );
+  lamp.castShadow = false;
+  g.add(lamp);
+
+  // Spoil: ore rocks and a stray log by the entrance.
+  for (let i = 0; i < 4; i++) {
+    const r = rock(rng);
+    r.position.set(range(rng, -0.3, 0.3), 0.01, range(rng, 0.14, 0.4));
+    g.add(r);
+  }
+  const log = mesh(new THREE.CylinderGeometry(0.035, 0.035, 0.26, 7), lambert(PALETTE.wood), 0.24, 0.04, 0.3);
+  log.rotation.z = Math.PI / 2;
+  log.rotation.y = range(rng, -0.4, 0.4);
+  g.add(log);
   return g;
 }
 

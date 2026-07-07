@@ -1,6 +1,15 @@
 // ABOUTME: single source of truth for the warm paper-diorama color palette
 // ABOUTME: tweak colors here — every module imports from this file
 
+// Paper-UI colors for the DOM the village view injects (labels, cards,
+// picker). Kept beside the 3D palette so the diorama and its chrome move
+// together instead of drifting via hardcoded hex in CSS strings.
+export const UI = {
+  paper: "#fff8e8",
+  ink: "#3a2a14",
+  inkSoft: "#6b5a3a",
+};
+
 export const PALETTE = {
   sky: "#f2e8d3",
 

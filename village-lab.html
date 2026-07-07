@@ -43,6 +43,18 @@
     background: var(--paper); font-family: inherit;
   }
   #panel input[type="range"] { flex: 1; }
+  #panel select {
+    flex: 1; padding: 2px 4px;
+    border: 1px solid var(--ink-soft); border-radius: 4px;
+    background: var(--paper); font-family: inherit; font-size: 12px;
+  }
+  #modifier-chips { display: flex; flex-wrap: wrap; gap: 4px; flex: 1; }
+  #modifier-chips button {
+    font-size: 11px; padding: 2px 8px; border-radius: 10px;
+  }
+  #modifier-chips button.on {
+    background: var(--ink-soft); color: var(--paper); border-color: var(--ink-soft);
+  }
   #panel button {
     padding: 2px 10px;
     border: 1px solid var(--ink-soft);
@@ -87,6 +99,18 @@
       <label>icons</label>
       <button id="labels-toggle">hide</button>
     </div>
+    <div class="row">
+      <label for="layer-input">layer</label>
+      <select id="layer-input">
+        <option value="0">High Reaches</option>
+        <option value="1" selected>Cloud Sea</option>
+        <option value="2">Hollow Deeps</option>
+      </select>
+    </div>
+    <div class="row" style="align-items:flex-start;">
+      <label style="margin-top:2px;">isle is…</label>
+      <div id="modifier-chips"></div>
+    </div>
   </div>
   <script type="module">
     import { createVillageView } from "./village/village-view.js";
@@ -97,14 +121,34 @@
     const countInput = document.getElementById("count-input");
     const countDisplay = document.getElementById("count-display");
     const labelsToggle = document.getElementById("labels-toggle");
+    const layerInput = document.getElementById("layer-input");
+    const chipsEl = document.getElementById("modifier-chips");
 
     let seed = 1;
     let count = 6;
     let showLabels = true;
     let view = null;
 
+    // The modifiers that currently theme the village (see village/src/theme.js);
+    // the rest of the game's vocabulary is still terrain-neutral.
+    const MODIFIERS = ["asha", "hollow", "crag", "tide", "glen", "helm"];
+    const active = new Set();
+    const character = () => ({ modifiers: [...active], layer: parseInt(layerInput.value, 10) });
+
+    for (const m of MODIFIERS) {
+      const chip = document.createElement("button");
+      chip.textContent = m;
+      chip.addEventListener("click", () => {
+        active.has(m) ? active.delete(m) : active.add(m);
+        chip.classList.toggle("on", active.has(m));
+        view.regenerate(seed, count, character());
+      });
+      chipsEl.appendChild(chip);
+    }
+    layerInput.addEventListener("change", () => view.regenerate(seed, count, character()));
+
     try {
-      view = createVillageView({ root: stage, seed, count, cardHint: "lab stub — game panel lives here" });
+      view = createVillageView({ root: stage, seed, count, character: character(), cardHint: "lab stub — game panel lives here" });
     } catch (e) {
       const fb = document.getElementById("fallback");
       fb.textContent = "3D view unavailable in this browser: " + (e.message || e);
