@@ -44,6 +44,7 @@ A single-file HTML/JS/CSS prototype at `index.html`. Zero dependencies, no build
 - **Non-fixed map, localStorage only** — no server side for the POC.
 - **Two mulberry32 implementations, on purpose (for now)** — the game's inline `rng()` (classic script) and `village/src/rng.js` (ES module) are the same algorithm on opposite sides of the script-type boundary. Sharing one copy means either making the game consume ES modules or the village consume globals; neither is worth it until the monolith modularizes. Revisit then.
 - **Village icon reassignments don't persist** — the bubble picker is a concept-sketching tool (inherited from the spike), not game state. Deciding what a building's role *means* belongs to the future building UI; persisting sketches now would bake in a save-schema shape we'd have to migrate away from.
+- **The 2D map is the contract for village looks** — a plain-looking island in the HUD lands on what reads as the classic default meadow (only subtle per-seed personality: grass shade, tree balance, river breadth within ~±15%). Dramatic village themes are reserved for character the player can already see before landing: name modifiers (which draw volcanoes/mines/banners on the map blob) and the altitude layer (on the altimeter). If we later want every village wildly distinct, the map art has to telegraph it first (the "biome tints" next-direction), not the other way around.
 
 ### Bugs found and fixed
 

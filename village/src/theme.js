@@ -122,19 +122,23 @@ export function themeFor(character = {}, seed = 0) {
   const modifiers = character.modifiers || [];
   const layer = character.layer ?? 1;
 
-  // Per-island soul: hue of the meadow, cast of the water, how wooded or
-  // stony the ground, how broad the river, leafy-vs-pine balance. Named
-  // modifiers and layers stack on top of this, they don't replace it.
+  // Per-island soul, kept SUBTLE on purpose: the 2D map is the contract.
+  // A plain-looking isle in the HUD must land on what reads as the classic
+  // meadow — just with its own small personality (a shade of grass, a few
+  // more pines, a slightly lazier river). The dramatic looks are reserved
+  // for character the map/HUD actually telegraphs: name modifiers (which
+  // draw volcanoes, mines, banners on the blob) and the altitude layer
+  // (shown on the altimeter).
   const vr = mulberry32((seed ^ 0x5eedca11) >>> 0);
   const vary = {
-    grassHue: range(vr, -20, 16),
-    grassLight: range(vr, -0.045, 0.055),
-    waterHue: range(vr, -14, 14),
-    trees: range(vr, 0.5, 1.7),
-    rocks: range(vr, 0.5, 1.9),
-    tufts: range(vr, 0.6, 1.6),
-    leafyRatio: range(vr, 0.25, 0.8),
-    riverWidth: range(vr, 0.65, 1.4),
+    grassHue: range(vr, -8, 7),
+    grassLight: range(vr, -0.02, 0.025),
+    waterHue: range(vr, -6, 6),
+    trees: range(vr, 0.75, 1.35),
+    rocks: range(vr, 0.7, 1.45),
+    tufts: range(vr, 0.8, 1.3),
+    leafyRatio: range(vr, 0.35, 0.72),
+    riverWidth: range(vr, 0.85, 1.18),
   };
 
   const colors = { ...PALETTE };
@@ -181,7 +185,7 @@ export function themeFor(character = {}, seed = 0) {
   // flatter boggy ground in the Deeps; crag isles are jagged everywhere.
   let hillAmp = layer === 0 ? 1.7 : layer === 2 ? 0.65 : 1;
   if (modifiers.includes("crag")) hillAmp *= 1.5;
-  hillAmp *= range(vr, 0.85, 1.2);
+  hillAmp *= range(vr, 0.92, 1.1);
 
   return {
     colors, scatter, props, light, flora,
