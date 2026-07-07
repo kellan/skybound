@@ -2,6 +2,7 @@
 // ABOUTME: village theme — terrain colors, scenery mix, and extra props
 
 import { PALETTE } from "./palette.js";
+import { mulberry32, range } from "./rng.js";
 
 // --- tiny hex color helpers (no three.js dependency here) ---
 function toRgb(hex) {
@@ -15,6 +16,31 @@ export function lerpHex(a, b, t) {
   const ca = toRgb(a);
   const cb = toRgb(b);
   return toHex([0, 1, 2].map((i) => ca[i] + (cb[i] - ca[i]) * t));
+}
+
+// Hue/lightness nudge in HSL space, for per-island color variation.
+export function shiftHex(hex, dHue, dLight = 0) {
+  let [r, g, b] = toRgb(hex).map((c) => c / 255);
+  const max = Math.max(r, g, b), min = Math.min(r, g, b);
+  let h = 0;
+  const l = (max + min) / 2;
+  const d = max - min;
+  const s = d === 0 ? 0 : d / (1 - Math.abs(2 * l - 1));
+  if (d !== 0) {
+    if (max === r) h = ((g - b) / d) % 6;
+    else if (max === g) h = (b - r) / d + 2;
+    else h = (r - g) / d + 4;
+    h *= 60;
+  }
+  h = (h + dHue + 360) % 360;
+  const l2 = Math.max(0, Math.min(1, l + dLight));
+  const c = (1 - Math.abs(2 * l2 - 1)) * s;
+  const x = c * (1 - Math.abs(((h / 60) % 2) - 1));
+  const m = l2 - c / 2;
+  const [r2, g2, b2] =
+    h < 60 ? [c, x, 0] : h < 120 ? [x, c, 0] : h < 180 ? [0, c, x] :
+    h < 240 ? [0, x, c] : h < 300 ? [x, 0, c] : [c, 0, x];
+  return toHex([(r2 + m) * 255, (g2 + m) * 255, (b2 + m) * 255]);
 }
 
 // Terrain palettes per modifier, in priority order — the first present wins
@@ -86,19 +112,41 @@ export const LAYER_LIGHT = [
 ];
 
 /**
- * character: { modifiers?: string[], layer?: number }
- * Returns { colors, scatter, props } — colors is a full PALETTE-shaped set
- * so the world/view can use it directly.
+ * character: { modifiers?: string[], layer?: number }, seed: the village
+ * seed — every island gets its own variation from it, so even two neutral
+ * isles on the same layer land differently.
+ * Returns { colors, scatter, props, light, flora, ... } — colors is a full
+ * PALETTE-shaped set so the world/view can use it directly.
  */
-export function themeFor(character = {}) {
+export function themeFor(character = {}, seed = 0) {
   const modifiers = character.modifiers || [];
   const layer = character.layer ?? 1;
 
+  // Per-island soul: hue of the meadow, cast of the water, how wooded or
+  // stony the ground, how broad the river, leafy-vs-pine balance. Named
+  // modifiers and layers stack on top of this, they don't replace it.
+  const vr = mulberry32((seed ^ 0x5eedca11) >>> 0);
+  const vary = {
+    grassHue: range(vr, -20, 16),
+    grassLight: range(vr, -0.045, 0.055),
+    waterHue: range(vr, -14, 14),
+    trees: range(vr, 0.5, 1.7),
+    rocks: range(vr, 0.5, 1.9),
+    tufts: range(vr, 0.6, 1.6),
+    leafyRatio: range(vr, 0.25, 0.8),
+    riverWidth: range(vr, 0.65, 1.4),
+  };
+
   const colors = { ...PALETTE };
+  colors.grassLow = shiftHex(colors.grassLow, vary.grassHue, vary.grassLight);
+  colors.grassHigh = shiftHex(colors.grassHigh, vary.grassHue, vary.grassLight);
+  colors.water = shiftHex(colors.water, vary.waterHue, 0);
+
+  // Named terrain identities override the base wash (an ash isle is ash).
   const terrain = TERRAIN_THEMES.find((th) => modifiers.includes(th.id));
   if (terrain) Object.assign(colors, terrain.colors);
 
-  const scatter = { trees: 1, rocks: 1, tufts: 1 };
+  const scatter = { trees: vary.trees, rocks: vary.rocks, tufts: vary.tufts };
   for (const m of modifiers) {
     const tw = SCATTER_TWEAKS[m];
     if (!tw) continue;
@@ -133,10 +181,12 @@ export function themeFor(character = {}) {
   // flatter boggy ground in the Deeps; crag isles are jagged everywhere.
   let hillAmp = layer === 0 ? 1.7 : layer === 2 ? 0.65 : 1;
   if (modifiers.includes("crag")) hillAmp *= 1.5;
+  hillAmp *= range(vr, 0.85, 1.2);
 
   return {
     colors, scatter, props, light, flora,
-    terrain: { hillAmp },
+    leafyRatio: vary.leafyRatio,
+    terrain: { hillAmp, riverWidth: vary.riverWidth },
     extraLilyPads: modifiers.includes("tide"),
   };
 }

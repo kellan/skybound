@@ -180,7 +180,7 @@ export function createVillageView({ root, seed = 1, count = 6, character = {}, c
     state.seed = newSeed;
     state.count = newCount;
     state.character = newCharacter;
-    const theme = themeFor(state.character);
+    const theme = themeFor(state.character, state.seed);
     state.skyColor = theme.colors.sky; // callers match their chrome to the weather
     scene.background = new THREE.Color(theme.colors.sky);
     // Fog distances scale with the same fit factor as the camera, so portrait

@@ -249,7 +249,9 @@ export function glowShroom(rng) {
 }
 
 // Tree mix per flora kind; each returns a make(rng) suited to the theme.
-export function treeMakerFor(flora) {
+// leafyRatio varies per island: how much of a temperate wood is round
+// broadleaf vs pine.
+export function treeMakerFor(flora, leafyRatio = 0.55) {
   switch (flora) {
     case "alpine": // snowy pines with the odd bare snag, no leafy rounds
       return (rng) => (rng() < 0.75 ? snowPine(rng) : deadTree(rng, "#8a7d6a"));
@@ -262,8 +264,8 @@ export function treeMakerFor(flora) {
       };
     case "charred": // ash isles keep only burnt snags
       return (rng) => deadTree(rng, "#4e4238");
-    default: // temperate — the spike's original mix
-      return (rng) => (rng() < 0.55 ? roundTree(rng) : pineTree(rng));
+    default: // temperate — leafy/pine balance is per-island
+      return (rng) => (rng() < leafyRatio ? roundTree(rng) : pineTree(rng));
   }
 }
 

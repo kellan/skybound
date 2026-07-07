@@ -52,6 +52,7 @@ export class World {
     this.seed = seed;
     this.colors = colors; // PALETTE-shaped; themes override terrain/water keys
     this.hillAmp = terrain.hillAmp ?? 1; // relief multiplier (layer character)
+    this.riverHalf = RIVER_HALF_WIDTH * (terrain.riverWidth ?? 1); // brook..broad
     const rng = mulberry32(seed * 7919 + 13);
 
     // Rolling-hill noise phases, fixed per seed.
@@ -123,7 +124,7 @@ export class World {
     const fade = smoothstep((ISLAND_RADIUS - r) / 1.4);
     const base = (0.1 * this.hillAmp * this._hills(x, z) + 0.06) * fade;
     const d = this.distToRiver(x, z);
-    const carve = -RIVER_DEPTH * Math.exp(-(d * d) / (RIVER_HALF_WIDTH * RIVER_HALF_WIDTH));
+    const carve = -RIVER_DEPTH * Math.exp(-(d * d) / (this.riverHalf * this.riverHalf));
     return base + carve;
   }
 
@@ -195,9 +196,9 @@ export class World {
       this.staticHeights[i] = h;
 
       const dRiver = this.distToRiver(x, z);
-      if (dRiver < RIVER_HALF_WIDTH * 1.9) {
+      if (dRiver < this.riverHalf * 1.9) {
         // Sandy banks blending back into grass.
-        const t = smoothstep((dRiver - RIVER_HALF_WIDTH * 0.7) / (RIVER_HALF_WIDTH * 1.2));
+        const t = smoothstep((dRiver - this.riverHalf * 0.7) / (this.riverHalf * 1.2));
         c.lerpColors(sand, grassLow, t);
       } else {
         const t = smoothstep((h + 0.05) / 0.24) * 0.8 + detail() * 0.2;

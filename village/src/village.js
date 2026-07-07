@@ -125,7 +125,7 @@ export class Village {
       }
     };
 
-    const tree = treeMakerFor(this.theme.flora);
+    const tree = treeMakerFor(this.theme.flora, this.theme.leafyRatio);
     scatter(Math.round(7 * mix.trees), 4.4, 6.4, 0.9, 1.4, tree);
     scatter(Math.round(3 * mix.trees), 1.5, 4.4, 0.95, 1.5, tree);
     scatter(Math.round(8 * mix.rocks), 1, 6.2, 0.85, 1.2, rock);
@@ -178,7 +178,7 @@ export class Village {
     // buildings, with both ends landing on dry banks. Skip the bridge
     // entirely if no sample qualifies — better no bridge than a broken one.
     const line = this.world.riverMain;
-    const span = RIVER_HALF_WIDTH * 2 + 1.2;
+    const span = this.world.riverHalf * 2 + 1.2;
     let best = -Infinity;
     let chosen = null;
 
