@@ -82,7 +82,12 @@ const SCATTER_TWEAKS = {
 };
 
 // Extra props per modifier (additive, order = placement priority).
-const PROPS = { helm: "banner", glen: "mine" };
+// wyn/pyre share the wyvern (nest on the ground, the beast circling above);
+// pyre's runs scorched.
+const PROPS = {
+  helm: "banner", glen: "mine", keep: "keep", spire: "watch",
+  sol: "shrine", wing: "feathers", wyn: "wyvern", pyre: "wyvern",
+};
 
 // Altitude layers change the weather, not just the paint: each has its own
 // palette wash AND its own light — sun color/angle, ambient, fog depth.
@@ -175,7 +180,11 @@ export function themeFor(character = {}, seed = 0) {
     colors.sky = lerpHex(colors.sky, layerTint.sky, 0.85);
   }
 
-  const light = LAYER_LIGHT[layer] || LAYER_LIGHT[1];
+  let light = LAYER_LIGHT[layer] || LAYER_LIGHT[1];
+  // Sun-blessed isles really are: warmer, brighter light wherever they float.
+  if (modifiers.includes("sol")) {
+    light = { ...light, sunColor: 0xfff3cf, sunIntensity: light.sunIntensity * 1.25 };
+  }
 
   // What grows: an ash isle burns regardless of altitude; otherwise the
   // layer decides (alpine pines up high, palms down near the ocean).
@@ -197,5 +206,7 @@ export function themeFor(character = {}, seed = 0) {
     leafyRatio: vary.leafyRatio,
     terrain: { hillAmp, riverWidth: vary.riverWidth },
     extraLilyPads: modifiers.includes("tide"),
+    // Pyre isles' wyverns run scorched (as do any on an ash isle).
+    wyvernScorched: modifiers.includes("pyre") || modifiers.includes("asha"),
   };
 }

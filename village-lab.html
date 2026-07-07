@@ -129,9 +129,9 @@
     let showLabels = true;
     let view = null;
 
-    // The modifiers that currently theme the village (see village/src/theme.js);
-    // the rest of the game's vocabulary is still terrain-neutral.
-    const MODIFIERS = ["asha", "hollow", "crag", "tide", "glen", "helm"];
+    // The full modifier vocabulary (see village/src/theme.js) — every one
+    // now has a village response.
+    const MODIFIERS = ["asha", "hollow", "crag", "tide", "glen", "helm", "keep", "spire", "sol", "wing", "wyn", "pyre"];
     const active = new Set();
     const character = () => ({ modifiers: [...active], layer: parseInt(layerInput.value, 10) });
 

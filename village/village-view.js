@@ -464,11 +464,32 @@ export function createVillageView({
   const clock = new THREE.Clock();
   let rafId = null;
   let disposed = false;
+  // Flyers (wyverns): slow circle over the village, gentle bob, wing flap.
+  function updateFlyers(t) {
+    const flyers = state.village ? state.village.flyers : [];
+    for (const f of flyers) {
+      const a = t * f.speed + f.phase;
+      f.group.position.set(
+        Math.cos(a) * f.radius,
+        f.height + Math.sin(t * 0.7 + f.phase) * 0.35,
+        Math.sin(a) * f.radius
+      );
+      // Face along the direction of travel (tangent of the circle).
+      f.group.rotation.y = -a - Math.PI / 2;
+      f.group.rotation.z = 0.12; // slight bank into the turn
+      const wings = f.group.userData.wings || [];
+      const flap = Math.sin(t * 5.2 + f.phase) * 0.45;
+      if (wings[0]) wings[0].rotation.x = -flap;
+      if (wings[1]) wings[1].rotation.x = flap;
+    }
+  }
+
   function loop() {
     if (disposed) return;
     const t = clock.getElapsedTime();
     updateLabels(t);
     updateSmoke(t);
+    updateFlyers(t);
     controls.update();
     renderer.render(scene, camera);
     rafId = win.requestAnimationFrame(loop);

@@ -5,7 +5,11 @@ import * as THREE from "../vendor/three.module.js";
 import { mulberry32, range, shuffle } from "./rng.js";
 import { World, ISLAND_RADIUS, WATER_Y, RIVER_HALF_WIDTH } from "./world.js";
 import { BUILDERS, BUILDING_KINDS } from "./buildings.js";
-import { buildGrowth, rock, lilyPad, buildBridge, warBanner, mineAdit, fishingPier, treeMakerFor } from "./decor.js";
+import {
+  buildGrowth, rock, lilyPad, buildBridge, warBanner, mineAdit, fishingPier,
+  stoneKeep, watchtower, sunShrine, giantFeathers, wyvernNest, wyvern,
+  treeMakerFor,
+} from "./decor.js";
 import { themeFor } from "./theme.js";
 
 const BUILD_RADIUS = 4.6; // buildings stay inside this ring
@@ -24,6 +28,7 @@ export class Village {
     scene.add(this.group);
     this.buildings = [];
     this.smokeAnchors = [];
+    this.flyers = []; // {group, radius, height, speed, phase} — view animates
 
     const rng = mulberry32(seed);
     this._placeBuildings(rng, count);
@@ -137,10 +142,16 @@ export class Village {
   // mine adit worked into the outskirts of a glen isle, fishing piers off
   // the rim on the low layer (the sea is right below).
   _placeProps(rng) {
+    const scorched = !!this.theme.wyvernScorched;
     const BUILDERS_BY_PROP = {
       banner: { make: warBanner, rMin: 0.8, rMax: 3.2, buildMargin: 1.0, face: "random" },
       mine: { make: mineAdit, rMin: 4.4, rMax: 5.9, buildMargin: 1.6, face: "center" },
       pier: { make: fishingPier, rMin: 6.35, rMax: 6.55, buildMargin: 1.2, face: "out" },
+      keep: { make: stoneKeep, rMin: 3.6, rMax: 5.4, buildMargin: 1.6, face: "center" },
+      watch: { make: watchtower, rMin: 4.6, rMax: 6.0, buildMargin: 1.5, face: "center" },
+      shrine: { make: sunShrine, rMin: 1.2, rMax: 3.6, buildMargin: 1.1, face: "random" },
+      feathers: { make: giantFeathers, rMin: 2.0, rMax: 5.8, buildMargin: 1.2, face: "random" },
+      wyvern: { make: (r) => wyvernNest(r, scorched), rMin: 4.8, rMax: 6.0, buildMargin: 1.8, face: "random" },
     };
     for (const prop of this.theme.props) {
       const spec = BUILDERS_BY_PROP[prop];
@@ -153,6 +164,19 @@ export class Village {
       else if (spec.face === "out") item.lookAt(spot.x * 2, item.position.y, spot.z * 2);
       else item.rotation.y = rng() * Math.PI * 2;
       this.group.add(item);
+
+      // The nest's owner: a wyvern circling high over the village.
+      if (prop === "wyvern") {
+        const beast = wyvern(rng, scorched);
+        this.group.add(beast);
+        this.flyers.push({
+          group: beast,
+          radius: 4 + rng() * 1.5,
+          height: 3.2 + rng() * 0.8,
+          speed: 0.22 + rng() * 0.08,
+          phase: rng() * Math.PI * 2,
+        });
+      }
     }
   }
 
