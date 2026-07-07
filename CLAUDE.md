@@ -2,7 +2,7 @@
 
 ## Ship art and animation
 
-Iterate on ship art and animation in `ship-lab.html` first. Only port a design into `index.html` once it reads right in the lab. The lab is the cheap, isolated place to try things; the game is where proven results land.
+Iterate on ship art and animation in `ship-lab.html` first. Once a design reads right in the lab, promote it into `ships.js` — the shared drawer file both the game and the lab render from. Don't add drawing code for shipped designs to `index.html` or copy drawers between files; `ships.js` is the single source of truth, and the lab keeps its own local drawers only for experiments that haven't shipped.
 
 ## Preview links
 

@@ -60,6 +60,9 @@
 </header>
 <div class="grid" id="grid"></div>
 
+<!-- Shipped ship art, shared with index.html. Cards for shipped designs
+     render from this so the lab always shows what the game actually draws. -->
+<script src="ships.js"></script>
 <script>
 (function () {
   const ships = [
@@ -71,10 +74,12 @@
     { id: 'turtleSideClassic', name: 'Turtle — side classic',    desc: 'Side view, dome shell, two visible flippers swimming front + back.' },
     { id: 'turtleSideArmored', name: 'Turtle — armored',         desc: 'Side view with spiked shell, helmet horn, slow steady paddle.' },
     { id: 'turtleSideSea',     name: 'Turtle — sea turtle',      desc: 'Streamlined, wing-like flippers sweeping; flatter shell.' },
+    { id: 'seaTurtle',         name: 'Sea turtle (in game)',     desc: 'The shipped top-down sea turtle, rendered from shared ships.js.' },
     { id: 'dragon',            name: 'Dragon — current',     desc: 'Top-down western dragon, kept for reference.' },
     { id: 'dragonEastern',     name: 'Dragon — Eastern',     desc: 'Long flowing body, mane spikes, whiskers, paired horns.' },
     { id: 'dragonWyvern',      name: 'Dragon — Wyvern',      desc: 'Side-on view. Two legs, near wing in front, far wing behind body.' },
     { id: 'dragonChibi',       name: 'Dragon — Chibi',       desc: 'Cute round-bodied dragon, big eye, fast wing flutter.' },
+    { id: 'wyvern',            name: 'Wyvern (in game)',     desc: 'The shipped profile wyvern, rendered from shared ships.js.' },
     { id: 'windSerpent',       name: 'Wind serpent',         desc: 'Segmented body whips behind a small winged head.' },
     { id: 'manta',             name: 'Manta ray',            desc: 'Wide glider, slow wing wave, long whip tail.' },
     { id: 'jellyfish',         name: 'Jellyfish',            desc: 'Dome pulses; attached tentacles stretch when sailing.' },
@@ -2678,6 +2683,11 @@
     cloudGalleonThreeQ: drawCloudGalleonThreeQ,
     dragonThreeQ: drawDragonThreeQ,
   };
+  // Shipped designs come from the shared ships.js so the lab shows what the
+  // game actually draws (the local versions above had drifted — e.g. the
+  // game's wind serpent gained a turn animation the lab never saw). The
+  // local copies stay for reference but are no longer wired to cards.
+  Object.assign(drawers, window.SkyboundShips.DRAWERS);
 
   // ---------- Render loop ----------
   let lastT = 0;

@@ -2,7 +2,7 @@
 // Exposes the running `window.__game` (including its `_test` internals) plus
 // a `tick(dt_ms)` helper that drives the requestAnimationFrame queue.
 
-import { JSDOM, VirtualConsole } from 'jsdom';
+import { JSDOM, VirtualConsole, requestInterceptor } from 'jsdom';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -10,6 +10,18 @@ import { installCanvasShim } from './canvas-shim.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(__dirname, '..', '..');
+
+// Serve <script src> requests (ships.js) from the repo root so the page's
+// external scripts execute in JSDOM just like inline ones.
+const localFileInterceptor = requestInterceptor((request) => {
+  const u = new URL(request.url);
+  if (u.hostname === 'localhost') {
+    const body = fs.readFileSync(path.join(ROOT, u.pathname), 'utf8');
+    return new Response(body, {
+      headers: { 'Content-Type': 'application/javascript' },
+    });
+  }
+});
 
 /**
  * @param {object} [opts]
@@ -34,6 +46,7 @@ export async function bootGame(opts = {}) {
     runScripts: 'dangerously',
     pretendToBeVisual: true,
     url: 'http://localhost/',
+    resources: { interceptors: [localFileInterceptor] },
     virtualConsole,
     beforeParse(window) {
       installCanvasShim(window);
@@ -60,8 +73,9 @@ export async function bootGame(opts = {}) {
     },
   });
 
-  // Wait for parse + IIFE to finish. JSDOM runs inline scripts synchronously,
-  // so by the time JSDOM resolves the document, boot() has already executed.
+  // Wait for parse + scripts to finish. The external ships.js loads through
+  // LocalResourceLoader before the game's inline script runs, and 'load'
+  // doesn't fire until both have executed — so boot() has run by then.
   await new Promise((resolve) => {
     if (dom.window.document.readyState === 'complete') resolve();
     else dom.window.addEventListener('load', () => resolve(), { once: true });

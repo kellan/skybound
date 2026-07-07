@@ -76,7 +76,7 @@ CI runs the suite on every push (`.github/workflows/test.yml`). Claude's remote 
 - Audio: ambient wind, soft thump on arrival, faint click on tap
 - Camera lead — offset ahead of the ship in its travel direction so you see more of where you're going
 - Smoothed compass needle (currently snaps slightly)
-- **Wind serpent turn animation**: current bunch-and-extend is functional but the coil reads as "shrink then grow", not as a creature really coiling on itself. Worth more iteration in `ship-lab.html` — try variants like spiraling segments tightening around the head (helical), or segments piling on each other (recoiling spring), or the head dipping down + tail flicking up through the turn. Per-card Turn button is already in the lab to make this easy.
+- **Wind serpent turn animation**: current bunch-and-extend is functional but the coil reads as "shrink then grow", not as a creature really coiling on itself. Worth more iteration in `ship-lab.html` — try variants like spiraling segments tightening around the head (helical), or segments piling on each other (recoiling spring), or the head dipping down + tail flicking up through the turn. The serpent's drawer now lives in the shared `ships.js` (the turn animation drives off the `facingLeft` arg); the lab has no per-card Turn button yet, so building one is the first step to iterating on this.
 
 ### World content
 - Give the altitude layers distinct character: palette/lighting per layer, layer-specific island types or hazards, wind that varies by altitude — turn ascend/descend into a decision rather than a toggle
@@ -94,7 +94,7 @@ CI runs the suite on every push (`.github/workflows/test.yml`). Claude's remote 
 
 ### Tech foundations
 - Save schema versioning so the format can evolve without nuking saves
-- Split the monolith into modules (`<script type="module">` is the lightest path; a real build with Vite or esbuild if it grows)
+- Split the monolith into modules — started: ship art now lives in a shared `ships.js` (classic script so `file://` keeps working) used by both the game and `ship-lab.html`. Next candidates: island art (still duplicated with `island-lab.html`), then the stateful core (`<script type="module">` is the lightest path; a real build with Vite or esbuild if it grows)
 - Migrate rendering to Pixi once we have animated sprites, particles, or shaders
 - Asset pipeline (sprite atlases, audio sprites)
 - Service worker for offline play
