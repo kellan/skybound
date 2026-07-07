@@ -14,6 +14,7 @@ test('rumors: asking marks the nearest unfound isle, once per island', async () 
   try {
     const g = h.game;
     const T = g._test;
+    T.setRumorRoll(() => false); // pin the plain branch — specials tested below
     const source = g.state.islands[0];
 
     assert.equal(g.state.rumors.length, 0, 'fresh voyage has no rumors spent');
@@ -50,6 +51,51 @@ test('rumors: asking marks the nearest unfound isle, once per island', async () 
     target.discovered = true;
     assert.equal(T.activeRumorMarkers().length, 0, 'marker gone once discovered');
     assert.equal(g.state.rumors.length, 1, 'ledger unchanged');
+  } finally { h.close(); }
+});
+
+test('rumors: a special roll points at a modifier isle and names its character', async () => {
+  const h = await bootGame();
+  try {
+    const g = h.game;
+    const T = g._test;
+    T.setRumorRoll(() => true);
+    const source = g.state.islands[0];
+
+    // Manufacture a known board: exactly one special isle among the unfound.
+    const unfound = g.state.islands.filter(i => !i.discovered && i !== source);
+    for (const i of unfound) i.modifiers = [];
+    const special = unfound[unfound.length - 1]; // deliberately not the nearest
+    special.modifiers = ['asha'];
+
+    const res = T.askRumorAt(source);
+    assert.equal(res.ok, true);
+    assert.match(res.message, /a fire-scarred isle to the [NESW]/);
+    const entry = snap(g.state.rumors[0]);
+    assert.equal(entry.flavor, 'fire-scarred');
+    assert.ok(Math.hypot(special.x - entry.x, special.y - entry.y) < 5,
+      'marker sits on the special isle, not the nearest plain one');
+
+    // The repeat keeps the flavor.
+    const again = T.askRumorAt(source);
+    assert.equal(again.ok, false);
+    assert.match(again.message, /a fire-scarred isle to the/);
+  } finally { h.close(); }
+});
+
+test('rumors: a special roll falls back to plain isles when no specials remain', async () => {
+  const h = await bootGame();
+  try {
+    const g = h.game;
+    const T = g._test;
+    T.setRumorRoll(() => true);
+    const source = g.state.islands[0];
+    for (const i of g.state.islands) i.modifiers = [];
+
+    const res = T.askRumorAt(source);
+    assert.equal(res.ok, true);
+    assert.match(res.message, /an isle to the [NESW]/);
+    assert.equal(snap(g.state.rumors[0]).flavor, undefined, 'no flavor on a plain tale');
   } finally { h.close(); }
 });
 

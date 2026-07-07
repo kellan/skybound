@@ -2409,6 +2409,7 @@
           ascend, descend, beginTransition,
           openVillage, closeVillage, villageSeedFor, villageBuildingCount,
           askRumorAt, rumorKey, activeRumorMarkers,
+          setRumorRoll(fn) { rumorRoll = fn; },
           setVillageLoader(fn) { villageLoader = fn; },
           get villageOpen() { return villageOpen; },
           get villageView() { return villageView; },
@@ -2675,24 +2676,46 @@
     return out;
   }
 
+  // How sailors describe an isle whose name marks it out — keyed by the
+  // modifier vocabulary (see MODIFIER_TOKENS / islands.js art).
+  const RUMOR_FLAVOR = {
+    asha: 'fire-scarred', glen: 'mine-riddled', helm: 'war-bannered',
+    hollow: 'overgrown', crag: 'craggy', tide: 'tide-washed',
+    keep: 'castle-crowned', spire: 'spire-topped', wing: 'winged',
+    sol: 'sun-haloed', wyn: 'wyvern-haunted', pyre: 'wyvern-haunted',
+  };
+
+  // Half of all rumors point at a special isle (one whose name modifiers
+  // give it distinct art) when any remain unfound. Deterministic per
+  // voyage and ask-order, like everything else in the world; the seam is
+  // overridable so tests can force either branch.
+  let rumorRoll = () =>
+    rng((state.seed ^ Math.imul(state.rumors.length + 1, 0x9E3779B9)) >>> 0)() < 0.5;
+
   function askRumorAt(island) {
     const spent = state.rumors.find(r => r.at === rumorKey(island));
     if (spent) {
       // The tale doesn't change — repeat it so the lead is never lost.
+      const what = spent.flavor ? `${spent.flavor} isle` : 'isle';
       return {
         ok: false,
-        message: `The cook shrugs — same tale as before: an isle to the ${spent.dir}, some ${spent.dist} lg out. The ✕ still marks it on your chart.`,
+        message: `The cook shrugs — same tale as before: a ${what} to the ${spent.dir}, some ${spent.dist} lg out. The ✕ still marks it on your chart.`,
       };
     }
+    const unfound = state.islands.filter(i => !i.discovered && i !== island);
+    if (!unfound.length) {
+      return { ok: false, message: 'Every isle at this altitude is already on your chart.' };
+    }
+    const specials = unfound.filter(i => (i.modifiers || []).length > 0);
+    const wantSpecial = specials.length > 0 && rumorRoll();
+    const pool = wantSpecial ? specials : unfound;
+
     let best = null, bestD = Infinity;
-    for (const i of state.islands) {
-      if (i.discovered || i === island) continue;
+    for (const i of pool) {
       const d = Math.hypot(i.x - island.x, i.y - island.y);
       if (d < bestD) { bestD = d; best = i; }
     }
-    if (!best) {
-      return { ok: false, message: 'Every isle at this altitude is already on your chart.' };
-    }
+    const flavor = wantSpecial ? (RUMOR_FLAVOR[best.modifiers[0]] || 'strange') : null;
     const dir = compassDir(Math.atan2(best.y - island.y, best.x - island.x)).split(' ')[0];
     state.rumors.push({
       at: rumorKey(island),
@@ -2701,6 +2724,7 @@
       y: Math.round(best.y),
       dir,
       dist: Math.round(bestD),
+      ...(flavor ? { flavor } : {}),
     });
     // Part the fog over the rumored isle (a little wider than one stamp so
     // the whole blob shows through when you get there).
@@ -2708,10 +2732,11 @@
     stampReveal(best.x - REVEAL_RADIUS * 0.55, best.y);
     stampReveal(best.x + REVEAL_RADIUS * 0.55, best.y);
     saveState();
-    window.__DBG?.push('info', `rumor at ${island.name}: marked isle near (${Math.round(best.x)}, ${Math.round(best.y)})`);
+    window.__DBG?.push('info', `rumor at ${island.name}: marked ${flavor || 'plain'} isle near (${Math.round(best.x)}, ${Math.round(best.y)})`);
+    const what = flavor ? `a ${flavor} isle` : 'an isle';
     return {
       ok: true,
-      message: `Over noodles, a sailor swears there’s an isle to the ${dir}, some ${Math.round(bestD)} lg out. An ✕ marks it on your map and chart.`,
+      message: `Over noodles, a sailor swears there’s ${what} to the ${dir}, some ${Math.round(bestD)} lg out. An ✕ marks it on your map and chart.`,
     };
   }
 
