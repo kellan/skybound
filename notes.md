@@ -8,7 +8,9 @@ A single-file HTML/JS/CSS prototype at `index.html`. Zero dependencies, no build
 
 ### What's implemented
 
-- **Procedural map**: 22 islands placed with min-distance rejection, seeded RNG (mulberry32), 3200×3200 world
+- **Procedural map**: islands placed with min-distance rejection inside an oval play area, seeded RNG (mulberry32). Two presets: small (3600×2800, 22 islands per layer) and large "Grand Voyage" (7200×5600, 88 per layer)
+- **Three altitude layers** (High Reaches / Cloud Sea / Hollow Deeps): the world is a stack of independently generated layers, each with its own islands and fog mask, deterministic per (seed, layer). Ships spawn on the middle layer; ascend/descend buttons run a ~2.5s veiled transition that swaps the active layer at the visual peak and drops a reveal stamp where the ship emerges. Layers currently differ only in name — giving them distinct character is an open direction (see below)
+- **Ship hangar**: dock at an island to swap between ship designs (drawn procedurally on canvas; art iterated in `ship-lab.html` first)
 - **Free-form 2D flight**: ship has continuous position, velocity, and heading
 - **Tap-anywhere navigation**: tap empty sky to chart a course there, tap a discovered island to target it directly
 - **Physics-driven steering**:
@@ -47,13 +49,16 @@ A single-file HTML/JS/CSS prototype at `index.html`. Zero dependencies, no build
 
 ### Testing approach
 
-No real browser is available in the build sandbox (Puppeteer can't download Chromium, no system Chrome/Firefox/WebKit). Testing is done via JSDOM with a canvas-API shim — this catches logic, DOM, event-handler, and script-execution issues but not real-browser rendering or platform-specific event quirks. Three test scripts exist:
+`npm install && npm test` runs a `node --test` suite under `test/`. The harness (`test/helpers/harness.js`) boots the real `index.html` into JSDOM with a canvas-API shim, a deterministic clock, and a hand-driven requestAnimationFrame queue, then reads and drives the game through the `window.__game` / `_test` seams. This catches logic, DOM, event-handler, and script-execution issues but not real-browser rendering or platform-specific event quirks. Suites:
 
-- `test-skybound.js` — boot, DOM presence, Set Sail click flow, canvas tap
-- `test-skybound-long.js` — 3-second simulated gameplay with multiple taps
-- `test-physics.js` — numerical verification that the ship arrives at targets without overshoot (straight-line and 180°-turn cases)
+- `boot-physics.test.js` — boot/DOM presence, Set Sail flow, arrival-without-overshoot and 180°-reversal physics, island discovery
+- `save-load.test.js` — save round-trip, corrupt-save fallback, debug wipe
+- `stamps-dedup.test.js` — fog reveal stamping and the spatial dedup grid
+- `altitude.test.js` — layer transitions
+- `ui-clicks.test.js` — HUD and input wiring
+- `perf.bench.js` (`npm run bench`) — frame-cost benchmark, not part of the test run
 
-iOS-specific issues require live testing in the Claude app's web viewer; the on-screen debug panel was built precisely because devtools aren't accessible there.
+CI runs the suite on every push (`.github/workflows/test.yml`). Claude's remote sandbox now ships Chromium with Playwright preconfigured, so real-browser smoke tests are possible as a future layer on top of the JSDOM suite. iOS-specific issues still require live testing in the Claude app's web viewer; the on-screen debug panel was built precisely because devtools aren't accessible there.
 
 ## Tech stack
 
@@ -74,6 +79,7 @@ iOS-specific issues require live testing in the Claude app's web viewer; the on-
 - **Wind serpent turn animation**: current bunch-and-extend is functional but the coil reads as "shrink then grow", not as a creature really coiling on itself. Worth more iteration in `ship-lab.html` — try variants like spiraling segments tightening around the head (helical), or segments piling on each other (recoiling spring), or the head dipping down + tail flicking up through the turn. Per-card Turn button is already in the lab to make this easy.
 
 ### World content
+- Give the altitude layers distinct character: palette/lighting per layer, layer-specific island types or hazards, wind that varies by altitude — turn ascend/descend into a decision rather than a toggle
 - Varied island appearance: size tiers, shape archetypes, biome tints
 - Non-island points of interest: wrecks, storm cells, anomalies, beacons, ruins
 - Named regions that announce themselves when entered ("The Hollow Reaches…")
