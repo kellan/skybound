@@ -62,6 +62,40 @@ test('migration: a legacy v2 save is upgraded to the layered format', async () =
   } finally { h.close(); }
 });
 
+test('migration: pre-v6 saves keep their legacy world geometry', async () => {
+  // Build a v5-era save (no world dims) from a real game, then check it
+  // loads under the legacy small-map dims instead of the retuned ones.
+  const h1 = await bootGame();
+  let v5;
+  try {
+    h1.game._test.saveState();
+    v5 = JSON.parse(h1.window.localStorage.getItem(SAVE_KEY));
+    delete v5.world;
+    v5.schemaVersion = 5;
+  } finally { h1.close(); }
+
+  const h2 = await bootGame({ savedState: v5 });
+  try {
+    const C = h2.game._test.constants;
+    assert.equal(C.WORLD.w, 3600, 'legacy width preserved');
+    assert.equal(C.WORLD.h, 2800, 'legacy height preserved');
+    const persisted = JSON.parse(h2.window.localStorage.getItem(SAVE_KEY) || 'null');
+    // The migrated save carries its dims forward from now on.
+    assert.equal(h2.game.state.world.w, 3600);
+  } finally { h2.close(); }
+});
+
+test('density: fresh voyages use the retuned sparser map', async () => {
+  const h = await bootGame();
+  try {
+    const C = h.game._test.constants;
+    assert.equal(C.WORLD.w, 4200, 'new world width');
+    assert.equal(h.game.state.islands.length, 17, '17 isles per layer');
+    assert.equal(C.MIN_ISLAND_DIST, 560, 'wider spacing floor');
+    assert.equal(h.game.state.world.islandCount, 17, 'dims stamped into the save');
+  } finally { h.close(); }
+});
+
 test('migration: a save from a newer schema falls back to a fresh game', async () => {
   const futureSave = { schemaVersion: 99, seed: 777, layers: [] };
   const h = await bootGame({ savedState: futureSave });

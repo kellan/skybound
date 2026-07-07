@@ -912,18 +912,32 @@
   // and screen-space math; cx/cy/rx/ry define the elliptical boundary the ship
   // and islands stay within. Two presets: the original "small" map and a
   // doubled-up "large" one for longer voyages.
+  // Density tuned down (2026-07): with rumors and trading paying in chart
+  // knowledge, information is only worth what the sailing costs. The old
+  // values (3600×2800 / 22 per layer / minDist 380) put the median nearest
+  // isle ~4.0s away at cruise speed; these put it ~5.7s (measured over 6
+  // seeds × 3 layers). Saves persist their own world dims, so old voyages
+  // keep the geometry they were generated with (see LEGACY_MAP_PRESETS).
   const MAP_PRESETS = {
+    small: { w: 4200, h: 3300, cx: 2100, cy: 1650, rx: 2100, ry: 1650, islandCount: 17 },
+    large: { w: 8400, h: 6600, cx: 4200, cy: 3300, rx: 4200, ry: 3300, islandCount: 68 },
+  };
+  // The dims pre-v6 saves were generated with — their islands live in these
+  // ellipses forever.
+  const LEGACY_MAP_PRESETS = {
     small: { w: 3600, h: 2800, cx: 1800, cy: 1400, rx: 1800, ry: 1400, islandCount: 22 },
     large: { w: 7200, h: 5600, cx: 3600, cy: 2800, rx: 3600, ry: 2800, islandCount: 88 },
   };
   let WORLD = { w: 0, h: 0, cx: 0, cy: 0, rx: 0, ry: 0 };
   let ISLAND_COUNT = 0;
-  function applyMapPreset(size) {
-    const p = MAP_PRESETS[size] || MAP_PRESETS.small;
+  function applyWorldDims(p) {
     WORLD.w = p.w; WORLD.h = p.h;
     WORLD.cx = p.cx; WORLD.cy = p.cy;
     WORLD.rx = p.rx; WORLD.ry = p.ry;
     ISLAND_COUNT = p.islandCount;
+  }
+  function applyMapPreset(size) {
+    applyWorldDims(MAP_PRESETS[size] || MAP_PRESETS.small);
   }
   applyMapPreset('small');
 
@@ -942,7 +956,7 @@
     return { x: WORLD.cx + u * (WORLD.rx - inset), y: WORLD.cy + v * (WORLD.ry - inset) };
   }
 
-  const MIN_ISLAND_DIST = 380;
+  const MIN_ISLAND_DIST = 560;
   const REVEAL_RADIUS = 220;
   const DISCOVERY_RADIUS = 140; // when an island is "discovered" by name
   const SHIP_MAX_SPEED = 110;   // px / sec
@@ -1023,7 +1037,7 @@
   // The save format is versioned by `schemaVersion` inside the payload. When
   // the shape changes: bump SAVE_SCHEMA and add an upgrade step below. Never
   // bump the localStorage key — that strands every existing save.
-  const SAVE_SCHEMA = 5;
+  const SAVE_SCHEMA = 6;
   const LEGACY_SAVE_KEY = 'skybound-poc-v2';
 
   // Each entry upgrades a save from that version to the next one.
@@ -1034,6 +1048,10 @@
     // v4 → v5 (trading + mounts): the hold you carry goods in, which
     // islands you've delivered to, and which mounts you've seen stabled.
     4: (old) => ({ ...old, hold: [], delivered: [], mountsSeen: old.shipType ? [old.shipType] : [] }),
+    // v5 → v6 (world dims in the save): density retuning changed the map
+    // presets, but an existing voyage's islands were placed under the old
+    // ones — stamp those legacy dims so its geometry never shifts.
+    5: (old) => ({ ...old, world: { ...LEGACY_MAP_PRESETS[old.mapSize === 'large' ? 'large' : 'small'] } }),
     // v2 → v3 (altitude layers): v2 saves are flat — top-level islands and
     // reveals, no layers. The old world becomes the middle layer (where all
     // v2 play happened); the other layers are generated fresh from the seed
@@ -1082,7 +1100,12 @@
     if (saved) {
       try {
         let parsed = JSON.parse(saved);
-        applyMapPreset(parsed.mapSize || 'small');
+        // The save's own dims win: a voyage keeps the geometry it was
+        // generated with. Pre-v6 saves don't carry dims yet — use the
+        // legacy presets they were built under (the v2 migration also
+        // generates layers with whatever dims are active here).
+        if (parsed.world && parsed.world.w) applyWorldDims(parsed.world);
+        else applyWorldDims(LEGACY_MAP_PRESETS[parsed.mapSize === 'large' ? 'large' : 'small']);
         resizeFogCanvas();
         parsed = migrateSave(parsed);
         if (!parsed.mapSize) parsed.mapSize = 'small';
@@ -1208,6 +1231,7 @@
       mapSize,
       layer: DEFAULT_LAYER,
       layers,
+      world: { ...MAP_PRESETS[mapSize] || MAP_PRESETS.small },
       rumors: [],
       hold: [],
       delivered: [],
@@ -1250,6 +1274,7 @@
       hold: s.hold || [],
       delivered: s.delivered || [],
       mountsSeen: s.mountsSeen || [s.shipType || 'cloudGalleon'],
+      world: s.world ? { ...s.world } : { ...WORLD, islandCount: ISLAND_COUNT },
     };
   }
 
