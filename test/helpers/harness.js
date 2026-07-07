@@ -26,11 +26,19 @@ const localFileInterceptor = requestInterceptor((request) => {
 /**
  * @param {object} [opts]
  * @param {object|null} [opts.savedState] - pre-seeded localStorage state.
+ * @param {string} [opts.savedStateKey] - localStorage key for savedState
+ *   (defaults to the current save key; pass 'skybound-poc-v2' to test
+ *   legacy-save migration).
  * @param {{w:number,h:number}} [opts.viewport]
  * @param {boolean} [opts.silenceConsole] - swallow page console output.
  */
 export async function bootGame(opts = {}) {
-  const { savedState = null, viewport = { w: 414, h: 896 }, silenceConsole = true } = opts;
+  const {
+    savedState = null,
+    savedStateKey = 'skybound-poc-v3',
+    viewport = { w: 414, h: 896 },
+    silenceConsole = true,
+  } = opts;
   const html = fs.readFileSync(path.join(ROOT, 'index.html'), 'utf8');
 
   const virtualConsole = new VirtualConsole();
@@ -52,7 +60,7 @@ export async function bootGame(opts = {}) {
       installCanvasShim(window);
 
       if (savedState) {
-        window.localStorage.setItem('skybound-poc-v3', JSON.stringify(savedState));
+        window.localStorage.setItem(savedStateKey, JSON.stringify(savedState));
       }
 
       // Viewport

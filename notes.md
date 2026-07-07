@@ -93,7 +93,7 @@ CI runs the suite on every push (`.github/workflows/test.yml`). Claude's remote 
 - Crew, ship upgrades, faction reputation — longer-term progression
 
 ### Tech foundations
-- Save schema versioning so the format can evolve without nuking saves
+- Save schema versioning — done: saves carry a `schemaVersion` that upgrades through a migrations table on load (the pre-altitude v2 format is migrated into the layered world — old voyage becomes the middle layer — instead of being deleted). Future shape changes bump `SAVE_SCHEMA` and add a step; the localStorage key stays frozen
 - Split the monolith into modules — started: ship art now lives in a shared `ships.js` (classic script so `file://` keeps working) used by both the game and `ship-lab.html`. Next candidates: island art (still duplicated with `island-lab.html`), then the stateful core (`<script type="module">` is the lightest path; a real build with Vite or esbuild if it grows)
 - Migrate rendering to Pixi once we have animated sprites, particles, or shaders
 - Asset pipeline (sprite atlases, audio sprites)

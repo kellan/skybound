@@ -859,6 +859,22 @@
     ISLAND_COUNT = p.islandCount;
   }
   applyMapPreset('small');
+
+  // Point inside the elliptical play area?
+  function insideWorldEllipse(x, y) {
+    const ex = (x - WORLD.cx) / WORLD.rx;
+    const ey = (y - WORLD.cy) / WORLD.ry;
+    return ex * ex + ey * ey <= 1;
+  }
+
+  // Uniform random point inside the world ellipse (rejection-sampled from
+  // the unit disk), inset by `inset` px so results keep clear of the wall.
+  function randomPointInEllipse(r, inset = 0) {
+    let u, v;
+    do { u = r() * 2 - 1; v = r() * 2 - 1; } while (u * u + v * v > 1);
+    return { x: WORLD.cx + u * (WORLD.rx - inset), y: WORLD.cy + v * (WORLD.ry - inset) };
+  }
+
   const MIN_ISLAND_DIST = 380;
   const REVEAL_RADIUS = 220;
   const DISCOVERY_RADIUS = 140; // when an island is "discovered" by name
@@ -877,7 +893,7 @@
   const LAYER_COUNT = LAYER_NAMES.length;
   const DEFAULT_LAYER = 1;          // middle layer is where ships spawn
   const TRANSITION_DUR = 2.5;       // seconds for an ascend/descend animation
-  const SAVE_KEY = 'skybound-poc-v3'; // bumped from v2 — layered worlds
+  const SAVE_KEY = 'skybound-poc-v3'; // frozen — schema changes go through SAVE_SCHEMA + SAVE_MIGRATIONS, not key bumps
 
   // ----- Island name fragments -----
   // These are the original "small map" name pool — kept verbatim because the
@@ -919,13 +935,80 @@
   // ----- State -----
   let state = null;
 
+  // First island on the current layer whose radius (+pad px) contains the
+  // point, or null. Taps use the generous TAP_PAD; docking checks (HUD
+  // "Docked at", hangar access) use the tighter DOCK_PAD.
+  const DOCK_PAD = 12;
+  const TAP_PAD = 18;
+  function islandAt(x, y, pad, discoveredOnly = false) {
+    for (const i of state.islands) {
+      if (discoveredOnly && !i.discovered) continue;
+      const dx = i.x - x, dy = i.y - y;
+      if (dx*dx + dy*dy < (i.radius + pad) * (i.radius + pad)) return i;
+    }
+    return null;
+  }
+
+  // ----- Save schema migrations -----
+  // The save format is versioned by `schemaVersion` inside the payload. When
+  // the shape changes: bump SAVE_SCHEMA and add an upgrade step below. Never
+  // bump the localStorage key — that strands every existing save.
+  const SAVE_SCHEMA = 3;
+  const LEGACY_SAVE_KEY = 'skybound-poc-v2';
+
+  // Each entry upgrades a save from that version to the next one.
+  const SAVE_MIGRATIONS = {
+    // v2 → v3 (altitude layers): v2 saves are flat — top-level islands and
+    // reveals, no layers. The old world becomes the middle layer (where all
+    // v2 play happened); the other layers are generated fresh from the seed
+    // exactly like newState does.
+    2: (old) => {
+      const layers = [];
+      for (let i = 0; i < LAYER_COUNT; i++) {
+        if (i === DEFAULT_LAYER) layers.push({ islands: old.islands, reveals: old.reveals });
+        else layers.push(generateLayer(layerSeed(old.seed, i), old.mapSize || 'small', false));
+      }
+      return {
+        seed: old.seed,
+        mapSize: old.mapSize || 'small',
+        layer: DEFAULT_LAYER,
+        layers,
+        ship: old.ship,
+        shipType: old.shipType || 'sloop',
+        target: old.target,
+      };
+    },
+  };
+
+  function migrateSave(parsed) {
+    // v2 saves predate the schemaVersion field; infer the version from shape.
+    let v = parsed.schemaVersion || (parsed.layers ? SAVE_SCHEMA : 2);
+    if (v > SAVE_SCHEMA) {
+      throw new Error(`save is from a newer build (schema ${v} > ${SAVE_SCHEMA})`);
+    }
+    while (v < SAVE_SCHEMA) {
+      const step = SAVE_MIGRATIONS[v];
+      if (!step) throw new Error(`no migration from save schema ${v}`);
+      parsed = step(parsed);
+      v++;
+    }
+    parsed.schemaVersion = SAVE_SCHEMA;
+    return parsed;
+  }
+
   function loadOrCreateState() {
-    const saved = localStorage.getItem(SAVE_KEY);
+    let saved = localStorage.getItem(SAVE_KEY);
+    let fromLegacyKey = false;
+    if (!saved) {
+      saved = localStorage.getItem(LEGACY_SAVE_KEY);
+      fromLegacyKey = !!saved;
+    }
     if (saved) {
       try {
-        const parsed = JSON.parse(saved);
+        let parsed = JSON.parse(saved);
         applyMapPreset(parsed.mapSize || 'small');
         resizeFogCanvas();
+        parsed = migrateSave(parsed);
         if (!parsed.mapSize) parsed.mapSize = 'small';
         if (!parsed.shipType) parsed.shipType = 'cloudGalleon';
         if (parsed.ship && parsed.ship.facingLeft == null) parsed.ship.facingLeft = false;
@@ -936,6 +1019,13 @@
         // Modifiers are deterministic from the name — recompute on load.
         for (const layer of parsed.layers) {
           for (const isl of layer.islands) isl.modifiers = modifiersFor(isl.name);
+        }
+        if (fromLegacyKey) {
+          // Persist the migrated save under the current key before removing
+          // the old one, so a crash in between can't lose the voyage.
+          localStorage.setItem(SAVE_KEY, JSON.stringify(serializeState(parsed)));
+          localStorage.removeItem(LEGACY_SAVE_KEY);
+          window.__DBG?.push('info', 'migrated legacy v2 save to schema ' + SAVE_SCHEMA);
         }
         // Bind convenience aliases to the current layer's arrays. All the
         // gameplay code reads state.islands / state.reveals; we rebind these
@@ -950,8 +1040,6 @@
         window.__DBG?.push('err', 'save load failed, starting fresh: ' + (e.message || e));
       }
     }
-    // Old v2 saves are incompatible with the layered world; clear them.
-    try { localStorage.removeItem('skybound-poc-v2'); } catch(e) {}
     return newState('small');
   }
 
@@ -967,13 +1055,9 @@
     const usedNames = new Set();
     let attempts = 0;
     const attemptBudget = ISLAND_COUNT * 200;
-    const placeRx = WORLD.rx - 200, placeRy = WORLD.ry - 200;
     while (islands.length < ISLAND_COUNT && attempts < attemptBudget) {
       attempts++;
-      const u = r() * 2 - 1, v = r() * 2 - 1;
-      if (u*u + v*v > 1) continue;
-      const x = WORLD.cx + u * placeRx;
-      const y = WORLD.cy + v * placeRy;
+      const { x, y } = randomPointInEllipse(r, 200);
       let ok = true;
       for (const i of islands) {
         const dx = i.x - x, dy = i.y - y;
@@ -1015,18 +1099,21 @@
     return { islands, reveals: [] };
   }
 
+  // Deterministic sub-seed per (seed, layer) pair — distinct across layers,
+  // reproducible for both fresh generation and save migration.
+  function layerSeed(seed, i) {
+    return (seed ^ (i * 0x9E3779B9)) >>> 0;
+  }
+
   function newState(mapSize = 'small') {
     applyMapPreset(mapSize);
     resizeFogCanvas();
 
     const seed = (Math.random() * 1e9) | 0;
 
-    // Each layer gets its own deterministic sub-seed so the layout is
-    // reproducible per (seed, layer) pair but distinct across layers.
     const layers = [];
     for (let i = 0; i < LAYER_COUNT; i++) {
-      const sub = (seed ^ (i * 0x9E3779B9)) >>> 0;
-      layers.push(generateLayer(sub, mapSize, i === DEFAULT_LAYER));
+      layers.push(generateLayer(layerSeed(seed, i), mapSize, i === DEFAULT_LAYER));
     }
 
     // Spawn ship at the first island on the default (middle) layer.
@@ -1054,25 +1141,29 @@
     return s;
   }
 
-  function saveState() {
-    // strip ship velocity (recomputed) but keep position/heading
-    const s = {
-      schemaVersion: 3,
-      seed: state.seed,
-      mapSize: state.mapSize || 'small',
-      layer: state.layer,
-      layers: state.layers.map(layer => ({
+  // Build the persistable form of a state object: strips ship velocity
+  // (recomputed) and island modifiers (recomputed from names on load).
+  function serializeState(s) {
+    return {
+      schemaVersion: SAVE_SCHEMA,
+      seed: s.seed,
+      mapSize: s.mapSize || 'small',
+      layer: s.layer,
+      layers: s.layers.map(layer => ({
         islands: layer.islands.map(i => ({
           x: i.x, y: i.y, radius: i.radius, name: i.name,
           shape: i.shape, discovered: i.discovered
         })),
         reveals: layer.reveals,
       })),
-      ship: { x: state.ship.x, y: state.ship.y, vx: 0, vy: 0, heading: state.ship.heading, facingLeft: !!state.ship.facingLeft },
-      shipType: state.shipType || 'cloudGalleon',
-      target: state.target,
+      ship: { x: s.ship.x, y: s.ship.y, vx: 0, vy: 0, heading: s.ship.heading, facingLeft: !!s.ship.facingLeft },
+      shipType: s.shipType || 'cloudGalleon',
+      target: s.target,
     };
-    try { localStorage.setItem(SAVE_KEY, JSON.stringify(s)); } catch(e) {}
+  }
+
+  function saveState() {
+    try { localStorage.setItem(SAVE_KEY, JSON.stringify(serializeState(state))); } catch(e) {}
   }
 
   // ----- Fog mask (offscreen canvas, world-sized) -----
@@ -1114,6 +1205,19 @@
     return false;
   }
 
+  // Erase one soft-edged reveal circle into a fog-style mask. Shared by the
+  // main fog canvas and the minimap so the falloff always matches.
+  function paintRevealGradient(c, x, y, rad) {
+    const g = c.createRadialGradient(x, y, rad * 0.3, x, y, rad);
+    g.addColorStop(0, 'rgba(0,0,0,1)');
+    g.addColorStop(0.7, 'rgba(0,0,0,0.85)');
+    g.addColorStop(1, 'rgba(0,0,0,0)');
+    c.fillStyle = g;
+    c.beginPath();
+    c.arc(x, y, rad, 0, Math.PI * 2);
+    c.fill();
+  }
+
   function bakeFog() {
     // Fully opaque dark fog
     fogCtx.globalCompositeOperation = 'source-over';
@@ -1124,16 +1228,7 @@
     // Erase reveal circles with soft edge
     fogCtx.globalCompositeOperation = 'destination-out';
     for (const r of state.reveals) {
-      const x = r.x * FOG_SCALE, y = r.y * FOG_SCALE;
-      const rad = REVEAL_RADIUS * FOG_SCALE;
-      const g = fogCtx.createRadialGradient(x, y, rad * 0.3, x, y, rad);
-      g.addColorStop(0, 'rgba(0,0,0,1)');
-      g.addColorStop(0.7, 'rgba(0,0,0,0.85)');
-      g.addColorStop(1, 'rgba(0,0,0,0)');
-      fogCtx.fillStyle = g;
-      fogCtx.beginPath();
-      fogCtx.arc(x, y, rad, 0, Math.PI * 2);
-      fogCtx.fill();
+      paintRevealGradient(fogCtx, r.x * FOG_SCALE, r.y * FOG_SCALE, REVEAL_RADIUS * FOG_SCALE);
       indexStamp(r.x, r.y);
     }
     fogCtx.globalCompositeOperation = 'source-over';
@@ -1145,17 +1240,8 @@
     if (hasNearbyStamp(wx, wy)) return false;
     state.reveals.push({ x: wx, y: wy });
     indexStamp(wx, wy);
-    const x = wx * FOG_SCALE, y = wy * FOG_SCALE;
-    const rad = REVEAL_RADIUS * FOG_SCALE;
     fogCtx.globalCompositeOperation = 'destination-out';
-    const g = fogCtx.createRadialGradient(x, y, rad * 0.3, x, y, rad);
-    g.addColorStop(0, 'rgba(0,0,0,1)');
-    g.addColorStop(0.7, 'rgba(0,0,0,0.85)');
-    g.addColorStop(1, 'rgba(0,0,0,0)');
-    fogCtx.fillStyle = g;
-    fogCtx.beginPath();
-    fogCtx.arc(x, y, rad, 0, Math.PI * 2);
-    fogCtx.fill();
+    paintRevealGradient(fogCtx, wx * FOG_SCALE, wy * FOG_SCALE, REVEAL_RADIUS * FOG_SCALE);
     fogCtx.globalCompositeOperation = 'source-over';
     return true;
   }
@@ -1257,14 +1343,7 @@
 
     const w = screenToWorld(sx, sy);
     // Check if tap is on a discovered island -> target its center
-    let pickedIsland = null;
-    for (const i of state.islands) {
-      if (!i.discovered) continue;
-      const dx = i.x - w.x, dy = i.y - w.y;
-      if (dx*dx + dy*dy < (i.radius + 18) * (i.radius + 18)) {
-        pickedIsland = i; break;
-      }
-    }
+    const pickedIsland = islandAt(w.x, w.y, TAP_PAD, true);
     if (pickedIsland) {
       state.target = { x: pickedIsland.x, y: pickedIsland.y, name: pickedIsland.name };
     } else {
@@ -2251,15 +2330,7 @@
     const revealRad = REVEAL_RADIUS * scale;
     miniCtx.globalCompositeOperation = 'destination-out';
     for (const r of state.reveals) {
-      const rx = wx(r.x), ry = wy(r.y);
-      const g = miniCtx.createRadialGradient(rx, ry, revealRad * 0.3, rx, ry, revealRad);
-      g.addColorStop(0, 'rgba(0,0,0,1)');
-      g.addColorStop(0.7, 'rgba(0,0,0,0.85)');
-      g.addColorStop(1, 'rgba(0,0,0,0)');
-      miniCtx.fillStyle = g;
-      miniCtx.beginPath();
-      miniCtx.arc(rx, ry, revealRad, 0, Math.PI * 2);
-      miniCtx.fill();
+      paintRevealGradient(miniCtx, wx(r.x), wy(r.y), revealRad);
     }
     miniCtx.globalCompositeOperation = 'source-over';
     miniCtx.restore();
@@ -2524,11 +2595,7 @@
       destEl.textContent = state.target.name || 'Open sky';
       distEl.textContent = Math.round(d) + ' lg';
     } else {
-      let dockedAt = null;
-      for (const i of state.islands) {
-        const dx = i.x - state.ship.x, dy = i.y - state.ship.y;
-        if (dx*dx + dy*dy < (i.radius + 12) * (i.radius + 12)) { dockedAt = i; break; }
-      }
+      const dockedAt = islandAt(state.ship.x, state.ship.y, DOCK_PAD);
       destEl.textContent = dockedAt ? `Docked at ${dockedAt.name}` : 'Adrift';
       distEl.textContent = '—';
     }
@@ -2592,10 +2659,9 @@
         get shipRenderMs() { return shipRenderStats(); },
         teleportRandom() {
           const r = rng((Math.random() * 1e9) | 0);
-          let u, v;
-          do { u = r() * 2 - 1; v = r() * 2 - 1; } while (u*u + v*v > 1);
-          state.ship.x = WORLD.cx + u * (WORLD.rx - 200);
-          state.ship.y = WORLD.cy + v * (WORLD.ry - 200);
+          const p = randomPointInEllipse(r, 200);
+          state.ship.x = p.x;
+          state.ship.y = p.y;
           state.ship.vx = 0; state.ship.vy = 0;
           camera.x = state.ship.x; camera.y = state.ship.y;
           state.target = null;
@@ -2606,9 +2672,7 @@
           // Stamp reveals on a grid, but only inside the ellipse
           for (let x = 0; x < WORLD.w; x += REVEAL_RADIUS) {
             for (let y = 0; y < WORLD.h; y += REVEAL_RADIUS) {
-              const ex = (x - WORLD.cx) / WORLD.rx;
-              const ey = (y - WORLD.cy) / WORLD.ry;
-              if (ex*ex + ey*ey <= 1) state.reveals.push({ x, y });
+              if (insideWorldEllipse(x, y)) state.reveals.push({ x, y });
             }
           }
           bakeFog();
@@ -2617,7 +2681,7 @@
         wipeSave() {
           try {
             localStorage.removeItem(SAVE_KEY);
-            localStorage.removeItem('skybound-poc-v2'); // legacy key
+            localStorage.removeItem(LEGACY_SAVE_KEY);
             DBG?.push('info', 'save wiped (' + SAVE_KEY + ')');
           } catch(e) { DBG?.push('err', 'wipe failed: ' + (e.message || e)); }
         },
@@ -2710,7 +2774,7 @@
 
     function startVoyage(mapSize) {
       localStorage.removeItem(SAVE_KEY);
-      localStorage.removeItem('skybound-poc-v2');
+      localStorage.removeItem(LEGACY_SAVE_KEY);
       state = newState(mapSize);
       camera.x = state.ship.x;
       camera.y = state.ship.y;
@@ -2761,11 +2825,7 @@
     const hangarEmpty    = document.getElementById('hangar-empty');
 
     function isDocked() {
-      for (const i of state.islands) {
-        const dx = i.x - state.ship.x, dy = i.y - state.ship.y;
-        if (dx*dx + dy*dy < (i.radius + 12) * (i.radius + 12)) return true;
-      }
-      return false;
+      return !!islandAt(state.ship.x, state.ship.y, DOCK_PAD);
     }
 
     const hangarCanvases = [];   // {id, ctx, W, H}
