@@ -73,6 +73,18 @@ test('save/load: a fresh boot with no save creates a deterministic-shaped state'
   } finally { h.close(); }
 });
 
+test('save/load: debug wipeSave removes the active save key', async () => {
+  const h = await bootGame();
+  try {
+    const g = h.game;
+    g._test.saveState();
+    assert.ok(h.window.localStorage.getItem(SAVE_KEY), 'save exists before wipe');
+    g.wipeSave();
+    assert.equal(h.window.localStorage.getItem(SAVE_KEY), null,
+      'active save key removed by wipeSave');
+  } finally { h.close(); }
+});
+
 test('save/load: corrupted localStorage falls back to a new game', async () => {
   // Inject garbage into the save slot before boot.
   const h = await bootGame({ savedState: null });

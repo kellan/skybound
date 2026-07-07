@@ -2,7 +2,7 @@
 // Exposes the running `window.__game` (including its `_test` internals) plus
 // a `tick(dt_ms)` helper that drives the requestAnimationFrame queue.
 
-import { JSDOM, VirtualConsole } from 'jsdom';
+import { JSDOM, VirtualConsole, requestInterceptor } from 'jsdom';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -11,14 +11,34 @@ import { installCanvasShim } from './canvas-shim.js';
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(__dirname, '..', '..');
 
+// Serve <script src> requests (ships.js) from the repo root so the page's
+// external scripts execute in JSDOM just like inline ones.
+const localFileInterceptor = requestInterceptor((request) => {
+  const u = new URL(request.url);
+  if (u.hostname === 'localhost') {
+    const body = fs.readFileSync(path.join(ROOT, u.pathname), 'utf8');
+    return new Response(body, {
+      headers: { 'Content-Type': 'application/javascript' },
+    });
+  }
+});
+
 /**
  * @param {object} [opts]
  * @param {object|null} [opts.savedState] - pre-seeded localStorage state.
+ * @param {string} [opts.savedStateKey] - localStorage key for savedState
+ *   (defaults to the current save key; pass 'skybound-poc-v2' to test
+ *   legacy-save migration).
  * @param {{w:number,h:number}} [opts.viewport]
  * @param {boolean} [opts.silenceConsole] - swallow page console output.
  */
 export async function bootGame(opts = {}) {
-  const { savedState = null, viewport = { w: 414, h: 896 }, silenceConsole = true } = opts;
+  const {
+    savedState = null,
+    savedStateKey = 'skybound-poc-v3',
+    viewport = { w: 414, h: 896 },
+    silenceConsole = true,
+  } = opts;
   const html = fs.readFileSync(path.join(ROOT, 'index.html'), 'utf8');
 
   const virtualConsole = new VirtualConsole();
@@ -34,12 +54,13 @@ export async function bootGame(opts = {}) {
     runScripts: 'dangerously',
     pretendToBeVisual: true,
     url: 'http://localhost/',
+    resources: { interceptors: [localFileInterceptor] },
     virtualConsole,
     beforeParse(window) {
       installCanvasShim(window);
 
       if (savedState) {
-        window.localStorage.setItem('skybound-poc-v3', JSON.stringify(savedState));
+        window.localStorage.setItem(savedStateKey, JSON.stringify(savedState));
       }
 
       // Viewport
@@ -60,8 +81,9 @@ export async function bootGame(opts = {}) {
     },
   });
 
-  // Wait for parse + IIFE to finish. JSDOM runs inline scripts synchronously,
-  // so by the time JSDOM resolves the document, boot() has already executed.
+  // Wait for parse + scripts to finish. The external ships.js loads through
+  // LocalResourceLoader before the game's inline script runs, and 'load'
+  // doesn't fire until both have executed — so boot() has run by then.
   await new Promise((resolve) => {
     if (dom.window.document.readyState === 'complete') resolve();
     else dom.window.addEventListener('load', () => resolve(), { once: true });

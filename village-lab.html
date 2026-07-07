@@ -1,0 +1,188 @@
+<!-- ABOUTME: standalone workbench for the 3D landing village — iterate here first,
+     the game embeds the same village/village-view.js module when you land.
+     ES modules need a server: `python3 -m http.server`, then open this page. -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Skybound — Village Lab</title>
+<style>
+  :root {
+    --sky: #f2e8d3;
+    --ink: #3a2a14;
+    --ink-soft: #6b5a3a;
+    --paper: #fff8e8;
+  }
+  * { box-sizing: border-box; }
+  html, body {
+    margin: 0; padding: 0; width: 100%; height: 100%;
+    overflow: hidden;
+    font-family: "Iowan Old Style", "Palatino Linotype", Georgia, serif;
+    background: var(--sky);
+  }
+  #stage { position: absolute; inset: 0; }
+  #panel {
+    position: absolute;
+    top: 18px; left: 18px;
+    padding: 14px 16px;
+    background: rgba(255, 248, 232, 0.92);
+    border: 1.5px solid var(--ink-soft);
+    border-radius: 10px;
+    box-shadow: 3px 4px 0 rgba(0, 0, 0, 0.08);
+    min-width: 230px;
+    z-index: 20;
+  }
+  #panel .title { font-size: 18px; font-weight: 700; color: var(--ink); letter-spacing: 0.5px; }
+  #panel .subtitle { font-size: 11px; color: var(--ink-soft); margin-bottom: 10px; font-style: italic; }
+  #panel .row { display: flex; align-items: center; gap: 8px; margin-top: 6px; }
+  #panel label { font-size: 12px; color: var(--ink); width: 60px; }
+  #panel input[type="number"] {
+    width: 90px; padding: 2px 6px;
+    border: 1px solid var(--ink-soft); border-radius: 4px;
+    background: var(--paper); font-family: inherit;
+  }
+  #panel input[type="range"] { flex: 1; }
+  #panel select {
+    flex: 1; padding: 2px 4px;
+    border: 1px solid var(--ink-soft); border-radius: 4px;
+    background: var(--paper); font-family: inherit; font-size: 12px;
+  }
+  #modifier-chips { display: flex; flex-wrap: wrap; gap: 4px; flex: 1; }
+  #modifier-chips button {
+    font-size: 11px; padding: 2px 8px; border-radius: 10px;
+  }
+  #modifier-chips button.on {
+    background: var(--ink-soft); color: var(--paper); border-color: var(--ink-soft);
+  }
+  #panel button {
+    padding: 2px 10px;
+    border: 1px solid var(--ink-soft);
+    background: var(--paper);
+    border-radius: 4px;
+    cursor: pointer;
+    font-family: inherit;
+    font-size: 13px;
+  }
+  #panel .count { font-size: 12px; color: var(--ink); width: 20px; text-align: right; }
+  #fallback {
+    position: absolute; top: 50%; left: 50%;
+    transform: translate(-50%, -50%);
+    font-style: italic; color: var(--ink-soft);
+    text-align: center; max-width: 320px;
+    display: none;
+  }
+  @media (max-width: 640px) {
+    #panel { top: 10px; left: 10px; min-width: 172px; padding: 10px 12px; }
+    #panel .title { font-size: 15px; }
+    #panel .subtitle { font-size: 10px; }
+  }
+</style>
+</head>
+<body>
+  <div id="stage"></div>
+  <div id="fallback"></div>
+  <div id="panel">
+    <div class="title">Village Lab</div>
+    <div class="subtitle">the diorama you get when you land on an island<br />tap a building; tap an icon bubble to reassign it</div>
+    <div class="row">
+      <label for="seed-input">seed</label>
+      <input id="seed-input" type="number" value="1" />
+      <button id="seed-bump">&#x21bb;</button>
+    </div>
+    <div class="row">
+      <label for="count-input">buildings</label>
+      <input id="count-input" type="range" min="3" max="9" value="6" />
+      <span id="count-display" class="count">6</span>
+    </div>
+    <div class="row">
+      <label>icons</label>
+      <button id="labels-toggle">hide</button>
+    </div>
+    <div class="row">
+      <label for="layer-input">layer</label>
+      <select id="layer-input">
+        <option value="0">High Reaches</option>
+        <option value="1" selected>Cloud Sea</option>
+        <option value="2">Hollow Deeps</option>
+      </select>
+    </div>
+    <div class="row" style="align-items:flex-start;">
+      <label style="margin-top:2px;">isle is…</label>
+      <div id="modifier-chips"></div>
+    </div>
+  </div>
+  <script type="module">
+    import { createVillageView } from "./village/village-view.js";
+
+    const stage = document.getElementById("stage");
+    const seedInput = document.getElementById("seed-input");
+    const seedBump = document.getElementById("seed-bump");
+    const countInput = document.getElementById("count-input");
+    const countDisplay = document.getElementById("count-display");
+    const labelsToggle = document.getElementById("labels-toggle");
+    const layerInput = document.getElementById("layer-input");
+    const chipsEl = document.getElementById("modifier-chips");
+
+    let seed = 1;
+    let count = 6;
+    let showLabels = true;
+    let view = null;
+
+    // The full modifier vocabulary (see village/src/theme.js) — every one
+    // now has a village response.
+    const MODIFIERS = ["asha", "hollow", "crag", "tide", "glen", "helm", "keep", "spire", "sol", "wing", "wyn", "pyre"];
+    const active = new Set();
+    const character = () => ({ modifiers: [...active], layer: parseInt(layerInput.value, 10) });
+
+    for (const m of MODIFIERS) {
+      const chip = document.createElement("button");
+      chip.textContent = m;
+      chip.addEventListener("click", () => {
+        active.has(m) ? active.delete(m) : active.add(m);
+        chip.classList.toggle("on", active.has(m));
+        view.regenerate(seed, count, character());
+      });
+      chipsEl.appendChild(chip);
+    }
+    layerInput.addEventListener("change", () => view.regenerate(seed, count, character()));
+
+    try {
+      view = createVillageView({
+        root: stage, seed, count, character: character(),
+        cardHint: "lab stub — game panel lives here",
+        // Mirror the game's Noodle House action so the card UI is iterable here.
+        actionFor: (kind) => (kind === "mushroom" ? { label: "Ask for rumors" } : null),
+        onAction: () => ({ message: "A sailor leans in… but the lab has no chart to part fog on. In the game this reveals the nearest unfound isle." }),
+      });
+    } catch (e) {
+      const fb = document.getElementById("fallback");
+      fb.textContent = "3D view unavailable in this browser: " + (e.message || e);
+      fb.style.display = "block";
+      throw e;
+    }
+
+    seedInput.addEventListener("input", (e) => {
+      seed = parseInt(e.target.value, 10) || 0;
+      view.regenerate(seed, count);
+    });
+    seedBump.addEventListener("click", () => {
+      seed += 1;
+      seedInput.value = seed;
+      view.regenerate(seed, count);
+    });
+    countInput.addEventListener("input", (e) => {
+      count = parseInt(e.target.value, 10);
+      countDisplay.textContent = count;
+      view.regenerate(seed, count);
+    });
+    labelsToggle.addEventListener("click", () => {
+      showLabels = !showLabels;
+      view.setLabelsVisible(showLabels);
+      labelsToggle.textContent = showLabels ? "hide" : "show";
+    });
+
+    window.__villageLab = { get view() { return view; } };
+  </script>
+</body>
+</html>

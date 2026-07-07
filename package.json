@@ -4,9 +4,11 @@
   "type": "module",
   "scripts": {
     "test": "node --test test/*.test.js",
+    "test:browser": "node --test test/browser/*.smoke.mjs",
     "bench": "node test/perf.bench.js"
   },
   "devDependencies": {
-    "jsdom": "^29.1.1"
+    "jsdom": "^29.1.1",
+    "playwright": "^1.49.0"
   }
 }

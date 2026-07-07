@@ -1,7 +1,26 @@
 # Skybound
 
-A web-based navigation POC: slow flight between procedurally placed sky islands with permanent fog-of-war reveal. Mobile-first, single-file, no build step.
+A web-based navigation POC: slow flight between procedurally placed sky islands with permanent fog-of-war reveal, across a stack of altitude layers. Mobile-first, single-file, no build step.
 
 Open `index.html` in a browser, or play the deployed version via GitHub Pages.
+
+## Repo layout
+
+- `index.html` — the game. Everything (CSS, HTML, JS) lives in this file, except the ship art.
+- `ships.js` / `islands.js` — the shipped ship and island drawers, shared by the game and the labs so they can't drift apart. Loaded as classic scripts (no build step, works over `file://`).
+- `ship-lab.html` — standalone workbench for iterating on ship art and animation. Try designs here first; promote them into `ships.js` once they read right.
+- `island-lab.html` — same idea for island shapes and name-modifier visuals.
+- `village/` — the 3D "tethered village" diorama you land on (adopted from the [village](https://github.com/kellan/village) spike): three.js is vendored (minified) in `village/vendor/`, the generator lives in `village/src/`, and `village/village-view.js` is the embeddable component. Villages are themed by the island's name modifiers and altitude layer (`village/src/theme.js`) — terrain, light, flora, and props all shift. Loaded as an ES module via dynamic `import()` only when you land, so the base game still works over `file://` (landing itself needs a server or the deployed page).
+- `village-lab.html` — workbench for the landing village, same convention as the other labs.
+- `test/` — Node test suite (JSDOM harness that boots the real `index.html`).
+
+## Tests
+
+```
+npm install
+npm test
+```
+
+The suite boots `index.html` in JSDOM with a canvas shim and a deterministic clock, then drives frames through the `window.__game` test seams. `npm run test:browser` additionally smoke-tests the landing flow in real headless Chromium (WebGL and the three.js module graph, which JSDOM can't reach). CI runs both on every push (`.github/workflows/test.yml`).
 
 See [notes.md](notes.md) for design notes, implementation details, and next directions.

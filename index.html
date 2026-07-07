@@ -234,7 +234,7 @@
     position: fixed; inset: 0;
     background: rgba(20, 14, 8, 0.55);
     display: none;
-    z-index: 40;
+    z-index: 55; /* above the village overlay — it opens from the tent */
     align-items: flex-start; justify-content: center;
     padding: calc(env(safe-area-inset-top, 12px) + 20px) 12px 20px;
     overflow-y: auto;
@@ -297,9 +297,66 @@
     border-radius: 3px;
     display: block;
   }
-  #hangar-empty {
-    padding: 20px 16px; text-align: center;
-    font-style: italic; opacity: 0.78; font-size: 13px;
+  /* ===== Landing (3D village) ===== */
+  #land-btn {
+    display: none;
+    margin: 0 auto 10px;
+    pointer-events: auto;
+    background: var(--parchment);
+    border: 1px solid var(--ink);
+    border-radius: 2px;
+    padding: 10px 26px;
+    font-family: inherit;
+    font-size: 12px;
+    font-weight: 700;
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+    color: var(--ink);
+    box-shadow: 0 3px 0 rgba(0,0,0,0.3);
+    cursor: pointer;
+  }
+  #land-btn.show { display: block; }
+  #land-btn:active { transform: translateY(1px); box-shadow: 0 2px 0 rgba(0,0,0,0.3); }
+  #village-overlay {
+    position: fixed; inset: 0;
+    display: none;
+    z-index: 45;
+    background: #f2e8d3; /* village PALETTE.sky */
+  }
+  #village-overlay.open { display: block; }
+  #village-stage { position: absolute; inset: 0; }
+  #village-topbar {
+    position: absolute; top: 0; left: 0; right: 0;
+    padding: env(safe-area-inset-top, 12px) 14px 10px;
+    display: flex; justify-content: space-between; align-items: flex-start;
+    pointer-events: none;
+    z-index: 5;
+  }
+  #village-topbar .badge { pointer-events: auto; }
+  #village-leave {
+    pointer-events: auto;
+    background: var(--ink);
+    color: var(--parchment-light);
+    border: none;
+    border-radius: 1px;
+    padding: 10px 18px;
+    font-family: inherit;
+    font-size: 11px;
+    letter-spacing: 0.15em;
+    text-transform: uppercase;
+    cursor: pointer;
+    box-shadow: 0 2px 0 rgba(0,0,0,0.25);
+  }
+  #village-leave:active { transform: translateY(1px); }
+  #village-status {
+    position: absolute; top: 50%; left: 50%;
+    transform: translate(-50%, -50%);
+    display: none;
+    font-style: italic;
+    color: var(--ink-soft);
+    font-size: 14px;
+    text-align: center;
+    max-width: 280px;
   }
 
   /* ===== Debug system ===== */
@@ -532,7 +589,6 @@
           <div id="menu-panel" role="menu">
             <button id="new-voyage-btn" role="menuitem">New Voyage</button>
             <button id="grand-voyage-btn" role="menuitem">Grand Voyage</button>
-            <button id="hangar-menu-item" role="menuitem">Hangar</button>
             <button id="debug-menu-item" role="menuitem">Debug</button>
           </div>
         </div>
@@ -542,16 +598,16 @@
     <div id="hangar-overlay" aria-hidden="true">
       <div id="hangar-panel" role="dialog" aria-labelledby="hangar-title">
         <div class="hangar-head">
-          <h2 id="hangar-title">Hangar</h2>
-          <button id="hangar-close" aria-label="Close hangar">Close</button>
+          <h2 id="hangar-title">Skywright's Stable</h2>
+          <button id="hangar-close" aria-label="Close stable">Close</button>
         </div>
-        <p class="hangar-sub">Choose a ship. Swap is only allowed while docked at an island.</p>
+        <p class="hangar-sub">The mounts stabled at this isle. Every mount favors a home altitude — sea-beasts low, wind-things high.</p>
         <div id="hangar-grid"></div>
-        <div id="hangar-empty" style="display:none;">You must be docked at an island to swap ships. Sail close to one, then try again.</div>
       </div>
     </div>
 
     <div id="bottom-bar">
+      <button id="land-btn">⚓ Land</button>
       <div id="status-card">
         <div class="row">
           <span class="label">Heading</span>
@@ -571,6 +627,16 @@
           <span class="value" id="distance-val">—</span>
         </div>
       </div>
+    </div>
+
+    <!-- Landing overlay: the 3D village you walk when docked -->
+    <div id="village-overlay" aria-hidden="true">
+      <div id="village-stage"></div>
+      <div id="village-topbar">
+        <div class="badge">Ashore at<strong id="village-name">—</strong></div>
+        <button id="village-leave">Set Sail</button>
+      </div>
+      <div id="village-status"></div>
     </div>
 
     <!-- Altitude controls (ascend / altimeter / descend) -->
@@ -742,8 +808,10 @@
       if (pill) pill.classList.remove('show');
     });
     byId('dbg-wipe')?.addEventListener('click', () => {
-      try { localStorage.removeItem('skybound-poc-v2'); DBG.push('info', 'localStorage wiped'); }
-      catch(e) { DBG.push('err', 'wipe failed: ' + e.message); }
+      // The game IIFE owns the save key; go through its debug surface so this
+      // can't drift out of sync with SAVE_KEY again.
+      if (window.__game) window.__game.wipeSave();
+      else DBG.push('warn', 'game not booted');
     });
     byId('dbg-teleport')?.addEventListener('click', () => {
       if (window.__game) window.__game.teleportRandom();
@@ -813,6 +881,11 @@
   DBG.push('info', 'debug subsystem ready');
 })();
 </script>
+<!-- Shared art (also used by ship-lab.html / island-lab.html). Loaded after
+     the debug subsystem so their errors are caught, before the game which
+     reads window.SkyboundShips / window.SkyboundIslands at boot. -->
+<script src="ships.js"></script>
+<script src="islands.js"></script>
 <script>
 /* =========================================================
    SKYBOUND — free-form 2D flight POC
@@ -853,6 +926,22 @@
     ISLAND_COUNT = p.islandCount;
   }
   applyMapPreset('small');
+
+  // Point inside the elliptical play area?
+  function insideWorldEllipse(x, y) {
+    const ex = (x - WORLD.cx) / WORLD.rx;
+    const ey = (y - WORLD.cy) / WORLD.ry;
+    return ex * ex + ey * ey <= 1;
+  }
+
+  // Uniform random point inside the world ellipse (rejection-sampled from
+  // the unit disk), inset by `inset` px so results keep clear of the wall.
+  function randomPointInEllipse(r, inset = 0) {
+    let u, v;
+    do { u = r() * 2 - 1; v = r() * 2 - 1; } while (u * u + v * v > 1);
+    return { x: WORLD.cx + u * (WORLD.rx - inset), y: WORLD.cy + v * (WORLD.ry - inset) };
+  }
+
   const MIN_ISLAND_DIST = 380;
   const REVEAL_RADIUS = 220;
   const DISCOVERY_RADIUS = 140; // when an island is "discovered" by name
@@ -871,7 +960,7 @@
   const LAYER_COUNT = LAYER_NAMES.length;
   const DEFAULT_LAYER = 1;          // middle layer is where ships spawn
   const TRANSITION_DUR = 2.5;       // seconds for an ascend/descend animation
-  const SAVE_KEY = 'skybound-poc-v3'; // bumped from v2 — layered worlds
+  const SAVE_KEY = 'skybound-poc-v3'; // frozen — schema changes go through SAVE_SCHEMA + SAVE_MIGRATIONS, not key bumps
 
   // ----- Island name fragments -----
   // These are the original "small map" name pool — kept verbatim because the
@@ -899,6 +988,9 @@
     wyn:  'wyn',
     pyre: 'pyre',
     asha: 'asha',
+    glen: 'glen', dell: 'glen',
+    hollow: 'hollow', thorn: 'hollow',
+    helm: 'helm', mel: 'helm',
   };
   function modifiersFor(name) {
     if (!name) return [];
@@ -913,15 +1005,95 @@
   // ----- State -----
   let state = null;
 
+  // First island on the current layer whose radius (+pad px) contains the
+  // point, or null. Taps use the generous TAP_PAD; docking checks (HUD
+  // "Docked at", hangar access) use the tighter DOCK_PAD.
+  const DOCK_PAD = 12;
+  const TAP_PAD = 18;
+  function islandAt(x, y, pad, discoveredOnly = false) {
+    for (const i of state.islands) {
+      if (discoveredOnly && !i.discovered) continue;
+      const dx = i.x - x, dy = i.y - y;
+      if (dx*dx + dy*dy < (i.radius + pad) * (i.radius + pad)) return i;
+    }
+    return null;
+  }
+
+  // ----- Save schema migrations -----
+  // The save format is versioned by `schemaVersion` inside the payload. When
+  // the shape changes: bump SAVE_SCHEMA and add an upgrade step below. Never
+  // bump the localStorage key — that strands every existing save.
+  const SAVE_SCHEMA = 5;
+  const LEGACY_SAVE_KEY = 'skybound-poc-v2';
+
+  // Each entry upgrades a save from that version to the next one.
+  const SAVE_MIGRATIONS = {
+    // v3 → v4 (rumors): track which islands' noodle houses have already
+    // shared their gossip this voyage. Old saves simply haven't asked yet.
+    3: (old) => ({ ...old, rumors: [] }),
+    // v4 → v5 (trading + mounts): the hold you carry goods in, which
+    // islands you've delivered to, and which mounts you've seen stabled.
+    4: (old) => ({ ...old, hold: [], delivered: [], mountsSeen: old.shipType ? [old.shipType] : [] }),
+    // v2 → v3 (altitude layers): v2 saves are flat — top-level islands and
+    // reveals, no layers. The old world becomes the middle layer (where all
+    // v2 play happened); the other layers are generated fresh from the seed
+    // exactly like newState does.
+    2: (old) => {
+      const layers = [];
+      for (let i = 0; i < LAYER_COUNT; i++) {
+        if (i === DEFAULT_LAYER) layers.push({ islands: old.islands, reveals: old.reveals });
+        else layers.push(generateLayer(layerSeed(old.seed, i), old.mapSize || 'small', false));
+      }
+      return {
+        seed: old.seed,
+        mapSize: old.mapSize || 'small',
+        layer: DEFAULT_LAYER,
+        layers,
+        ship: old.ship,
+        shipType: old.shipType || 'sloop',
+        target: old.target,
+      };
+    },
+  };
+
+  function migrateSave(parsed) {
+    // v2 saves predate the schemaVersion field; infer the version from shape.
+    let v = parsed.schemaVersion || (parsed.layers ? SAVE_SCHEMA : 2);
+    if (v > SAVE_SCHEMA) {
+      throw new Error(`save is from a newer build (schema ${v} > ${SAVE_SCHEMA})`);
+    }
+    while (v < SAVE_SCHEMA) {
+      const step = SAVE_MIGRATIONS[v];
+      if (!step) throw new Error(`no migration from save schema ${v}`);
+      parsed = step(parsed);
+      v++;
+    }
+    parsed.schemaVersion = SAVE_SCHEMA;
+    return parsed;
+  }
+
   function loadOrCreateState() {
-    const saved = localStorage.getItem(SAVE_KEY);
+    let saved = localStorage.getItem(SAVE_KEY);
+    let fromLegacyKey = false;
+    if (!saved) {
+      saved = localStorage.getItem(LEGACY_SAVE_KEY);
+      fromLegacyKey = !!saved;
+    }
     if (saved) {
       try {
-        const parsed = JSON.parse(saved);
+        let parsed = JSON.parse(saved);
         applyMapPreset(parsed.mapSize || 'small');
         resizeFogCanvas();
+        parsed = migrateSave(parsed);
         if (!parsed.mapSize) parsed.mapSize = 'small';
         if (!parsed.shipType) parsed.shipType = 'cloudGalleon';
+        // Rumors are objects ({at, layer, x, y, dir, dist}); drop anything
+        // else (e.g. the short-lived string form from early v4 builds).
+        parsed.rumors = (Array.isArray(parsed.rumors) ? parsed.rumors : [])
+          .filter(r => r && typeof r === 'object' && typeof r.at === 'string');
+        if (!Array.isArray(parsed.hold)) parsed.hold = [];
+        if (!Array.isArray(parsed.delivered)) parsed.delivered = [];
+        if (!Array.isArray(parsed.mountsSeen)) parsed.mountsSeen = [parsed.shipType];
         if (parsed.ship && parsed.ship.facingLeft == null) parsed.ship.facingLeft = false;
         if (parsed.layer == null) parsed.layer = DEFAULT_LAYER;
         if (!parsed.layers || !Array.isArray(parsed.layers) || parsed.layers.length !== LAYER_COUNT) {
@@ -931,6 +1103,13 @@
         for (const layer of parsed.layers) {
           for (const isl of layer.islands) isl.modifiers = modifiersFor(isl.name);
         }
+        if (fromLegacyKey) {
+          // Persist the migrated save under the current key before removing
+          // the old one, so a crash in between can't lose the voyage.
+          localStorage.setItem(SAVE_KEY, JSON.stringify(serializeState(parsed)));
+          localStorage.removeItem(LEGACY_SAVE_KEY);
+          window.__DBG?.push('info', 'migrated legacy v2 save to schema ' + SAVE_SCHEMA);
+        }
         // Bind convenience aliases to the current layer's arrays. All the
         // gameplay code reads state.islands / state.reveals; we rebind these
         // when the layer changes.
@@ -938,10 +1117,12 @@
         parsed.reveals = parsed.layers[parsed.layer].reveals;
         parsed.transition = null; // never resume mid-transition
         return parsed;
-      } catch(e) {}
+      } catch(e) {
+        // A corrupt or shape-mismatched save falls back to a new game; leave
+        // a trace so the discarded save is debuggable in the field.
+        window.__DBG?.push('err', 'save load failed, starting fresh: ' + (e.message || e));
+      }
     }
-    // Old v2 saves are incompatible with the layered world; clear them.
-    try { localStorage.removeItem('skybound-poc-v2'); } catch(e) {}
     return newState('small');
   }
 
@@ -957,13 +1138,9 @@
     const usedNames = new Set();
     let attempts = 0;
     const attemptBudget = ISLAND_COUNT * 200;
-    const placeRx = WORLD.rx - 200, placeRy = WORLD.ry - 200;
     while (islands.length < ISLAND_COUNT && attempts < attemptBudget) {
       attempts++;
-      const u = r() * 2 - 1, v = r() * 2 - 1;
-      if (u*u + v*v > 1) continue;
-      const x = WORLD.cx + u * placeRx;
-      const y = WORLD.cy + v * placeRy;
+      const { x, y } = randomPointInEllipse(r, 200);
       let ok = true;
       for (const i of islands) {
         const dx = i.x - x, dy = i.y - y;
@@ -1005,18 +1182,21 @@
     return { islands, reveals: [] };
   }
 
+  // Deterministic sub-seed per (seed, layer) pair — distinct across layers,
+  // reproducible for both fresh generation and save migration.
+  function layerSeed(seed, i) {
+    return (seed ^ (i * 0x9E3779B9)) >>> 0;
+  }
+
   function newState(mapSize = 'small') {
     applyMapPreset(mapSize);
     resizeFogCanvas();
 
     const seed = (Math.random() * 1e9) | 0;
 
-    // Each layer gets its own deterministic sub-seed so the layout is
-    // reproducible per (seed, layer) pair but distinct across layers.
     const layers = [];
     for (let i = 0; i < LAYER_COUNT; i++) {
-      const sub = (seed ^ (i * 0x9E3779B9)) >>> 0;
-      layers.push(generateLayer(sub, mapSize, i === DEFAULT_LAYER));
+      layers.push(generateLayer(layerSeed(seed, i), mapSize, i === DEFAULT_LAYER));
     }
 
     // Spawn ship at the first island on the default (middle) layer.
@@ -1028,6 +1208,10 @@
       mapSize,
       layer: DEFAULT_LAYER,
       layers,
+      rumors: [],
+      hold: [],
+      delivered: [],
+      mountsSeen: ['cloudGalleon'], // you know the mount you ride in on
       ship: {
         x: start.x + 60, y: start.y + 60,
         vx: 0, vy: 0,
@@ -1044,25 +1228,33 @@
     return s;
   }
 
-  function saveState() {
-    // strip ship velocity (recomputed) but keep position/heading
-    const s = {
-      schemaVersion: 3,
-      seed: state.seed,
-      mapSize: state.mapSize || 'small',
-      layer: state.layer,
-      layers: state.layers.map(layer => ({
+  // Build the persistable form of a state object: strips ship velocity
+  // (recomputed) and island modifiers (recomputed from names on load).
+  function serializeState(s) {
+    return {
+      schemaVersion: SAVE_SCHEMA,
+      seed: s.seed,
+      mapSize: s.mapSize || 'small',
+      layer: s.layer,
+      layers: s.layers.map(layer => ({
         islands: layer.islands.map(i => ({
           x: i.x, y: i.y, radius: i.radius, name: i.name,
           shape: i.shape, discovered: i.discovered
         })),
         reveals: layer.reveals,
       })),
-      ship: { x: state.ship.x, y: state.ship.y, vx: 0, vy: 0, heading: state.ship.heading, facingLeft: !!state.ship.facingLeft },
-      shipType: state.shipType || 'cloudGalleon',
-      target: state.target,
+      ship: { x: s.ship.x, y: s.ship.y, vx: 0, vy: 0, heading: s.ship.heading, facingLeft: !!s.ship.facingLeft },
+      shipType: s.shipType || 'cloudGalleon',
+      target: s.target,
+      rumors: s.rumors || [],
+      hold: s.hold || [],
+      delivered: s.delivered || [],
+      mountsSeen: s.mountsSeen || [s.shipType || 'cloudGalleon'],
     };
-    try { localStorage.setItem(SAVE_KEY, JSON.stringify(s)); } catch(e) {}
+  }
+
+  function saveState() {
+    try { localStorage.setItem(SAVE_KEY, JSON.stringify(serializeState(state))); } catch(e) {}
   }
 
   // ----- Fog mask (offscreen canvas, world-sized) -----
@@ -1104,6 +1296,19 @@
     return false;
   }
 
+  // Erase one soft-edged reveal circle into a fog-style mask. Shared by the
+  // main fog canvas and the minimap so the falloff always matches.
+  function paintRevealGradient(c, x, y, rad) {
+    const g = c.createRadialGradient(x, y, rad * 0.3, x, y, rad);
+    g.addColorStop(0, 'rgba(0,0,0,1)');
+    g.addColorStop(0.7, 'rgba(0,0,0,0.85)');
+    g.addColorStop(1, 'rgba(0,0,0,0)');
+    c.fillStyle = g;
+    c.beginPath();
+    c.arc(x, y, rad, 0, Math.PI * 2);
+    c.fill();
+  }
+
   function bakeFog() {
     // Fully opaque dark fog
     fogCtx.globalCompositeOperation = 'source-over';
@@ -1114,16 +1319,7 @@
     // Erase reveal circles with soft edge
     fogCtx.globalCompositeOperation = 'destination-out';
     for (const r of state.reveals) {
-      const x = r.x * FOG_SCALE, y = r.y * FOG_SCALE;
-      const rad = REVEAL_RADIUS * FOG_SCALE;
-      const g = fogCtx.createRadialGradient(x, y, rad * 0.3, x, y, rad);
-      g.addColorStop(0, 'rgba(0,0,0,1)');
-      g.addColorStop(0.7, 'rgba(0,0,0,0.85)');
-      g.addColorStop(1, 'rgba(0,0,0,0)');
-      fogCtx.fillStyle = g;
-      fogCtx.beginPath();
-      fogCtx.arc(x, y, rad, 0, Math.PI * 2);
-      fogCtx.fill();
+      paintRevealGradient(fogCtx, r.x * FOG_SCALE, r.y * FOG_SCALE, REVEAL_RADIUS * FOG_SCALE);
       indexStamp(r.x, r.y);
     }
     fogCtx.globalCompositeOperation = 'source-over';
@@ -1135,17 +1331,8 @@
     if (hasNearbyStamp(wx, wy)) return false;
     state.reveals.push({ x: wx, y: wy });
     indexStamp(wx, wy);
-    const x = wx * FOG_SCALE, y = wy * FOG_SCALE;
-    const rad = REVEAL_RADIUS * FOG_SCALE;
     fogCtx.globalCompositeOperation = 'destination-out';
-    const g = fogCtx.createRadialGradient(x, y, rad * 0.3, x, y, rad);
-    g.addColorStop(0, 'rgba(0,0,0,1)');
-    g.addColorStop(0.7, 'rgba(0,0,0,0.85)');
-    g.addColorStop(1, 'rgba(0,0,0,0)');
-    fogCtx.fillStyle = g;
-    fogCtx.beginPath();
-    fogCtx.arc(x, y, rad, 0, Math.PI * 2);
-    fogCtx.fill();
+    paintRevealGradient(fogCtx, wx * FOG_SCALE, wy * FOG_SCALE, REVEAL_RADIUS * FOG_SCALE);
     fogCtx.globalCompositeOperation = 'source-over';
     return true;
   }
@@ -1247,14 +1434,7 @@
 
     const w = screenToWorld(sx, sy);
     // Check if tap is on a discovered island -> target its center
-    let pickedIsland = null;
-    for (const i of state.islands) {
-      if (!i.discovered) continue;
-      const dx = i.x - w.x, dy = i.y - w.y;
-      if (dx*dx + dy*dy < (i.radius + 18) * (i.radius + 18)) {
-        pickedIsland = i; break;
-      }
-    }
+    const pickedIsland = islandAt(w.x, w.y, TAP_PAD, true);
     if (pickedIsland) {
       state.target = { x: pickedIsland.x, y: pickedIsland.y, name: pickedIsland.name };
     } else {
@@ -1476,481 +1656,22 @@
     }
   }
 
-  // ----- Island modifier draw helpers -----
-  // Modifier drawers are designed at a baseline radius of 36 and use a
-  // "surface anchor" point at (-radius*0.2, -radius*0.2) — the same spot the
-  // existing highlight occupied. The withSurfaceAnchor helper translates to
-  // that point in world coords and scales by radius/36 so every modifier
-  // looks proportional on any island size.
-  function withSurfaceAnchor(island, cx, cy, fn) {
-    const s = island.radius / 36;
-    ctx.save();
-    ctx.translate(cx + island.radius * -0.2, cy + island.radius * -0.2);
-    ctx.scale(s, s);
-    fn();
-    ctx.restore();
-  }
-
-  function modCastle(island, cx, cy, t, opts = {}) {
-    withSurfaceAnchor(island, cx, cy, () => {
-      if (opts.offset) { ctx.translate(13, 5); ctx.scale(0.7, 0.7); }
-      ctx.fillStyle = '#cabd99';
-      ctx.fillRect(-4, -10, 8, 10);
-      ctx.strokeStyle = '#2a2417';
-      ctx.lineWidth = 0.7;
-      ctx.strokeRect(-4, -10, 8, 10);
-      for (const px of [-3.6, -1.8, 0, 1.8]) {
-        ctx.fillStyle = '#cabd99';
-        ctx.fillRect(px, -12, 1.4, 2);
-        ctx.strokeRect(px, -12, 1.4, 2);
-      }
-      ctx.strokeStyle = 'rgba(40,30,20,0.45)';
-      ctx.lineWidth = 0.3;
-      for (let k = 1; k < 3; k++) {
-        ctx.beginPath();
-        ctx.moveTo(-4, -k * 3); ctx.lineTo(4, -k * 3);
-        ctx.stroke();
-      }
-      ctx.fillStyle = '#2a1f12';
-      ctx.beginPath();
-      ctx.moveTo(-1.1, 0); ctx.lineTo(-1.1, -2.4);
-      ctx.quadraticCurveTo(0, -3.6, 1.1, -2.4);
-      ctx.lineTo(1.1, 0); ctx.closePath(); ctx.fill();
-      ctx.fillStyle = '#3a2810';
-      ctx.fillRect(-0.7, -7, 1.4, 1.6);
-      const flutter = Math.sin(t * 4) * 0.4;
-      ctx.strokeStyle = '#2a2417';
-      ctx.lineWidth = 0.5;
-      ctx.beginPath(); ctx.moveTo(0, -12); ctx.lineTo(0, -16); ctx.stroke();
-      ctx.fillStyle = '#c9342c';
-      ctx.beginPath();
-      ctx.moveTo(0, -16);
-      ctx.lineTo(4 + flutter, -15.4);
-      ctx.lineTo(2.6, -14.4);
-      ctx.lineTo(4 - flutter, -13.4);
-      ctx.lineTo(0, -14);
-      ctx.closePath(); ctx.fill();
-    });
-  }
-
-  function modPeaks(island, cx, cy, t) {
-    withSurfaceAnchor(island, cx, cy, () => {
-      const drawPeak = (px, py, ph, pw) => {
-        ctx.beginPath();
-        ctx.moveTo(px - pw, py);
-        ctx.lineTo(px - pw * 0.2, py - ph);
-        ctx.lineTo(px + pw * 0.1, py - ph * 0.7);
-        ctx.lineTo(px + pw * 0.5, py - ph * 0.85);
-        ctx.lineTo(px + pw, py);
-        ctx.closePath();
-        const pg = ctx.createLinearGradient(px, py - ph, px, py);
-        pg.addColorStop(0, '#9aa3a8');
-        pg.addColorStop(1, '#5a635a');
-        ctx.fillStyle = pg; ctx.fill();
-        ctx.strokeStyle = '#2a2417'; ctx.lineWidth = 0.6; ctx.stroke();
-        ctx.beginPath();
-        ctx.moveTo(px - pw * 0.32, py - ph * 0.74);
-        ctx.lineTo(px - pw * 0.18, py - ph);
-        ctx.lineTo(px + pw * 0.06, py - ph * 0.74);
-        ctx.closePath();
-        ctx.fillStyle = '#f4ecd6'; ctx.fill();
-      };
-      drawPeak(-2, 0, 14, 7);
-      drawPeak(4,  0, 9.8, 4.9);
-    });
-  }
-
-  function modVolcano(island, cx, cy, t) {
-    withSurfaceAnchor(island, cx, cy, () => {
-      ctx.beginPath();
-      ctx.moveTo(-8, 0); ctx.lineTo(-2.5, -10);
-      ctx.lineTo(2.5, -10); ctx.lineTo(8, 0); ctx.closePath();
-      const cg = ctx.createLinearGradient(0, -10, 0, 0);
-      cg.addColorStop(0, '#3a2a22'); cg.addColorStop(1, '#1a120a');
-      ctx.fillStyle = cg; ctx.fill();
-      ctx.strokeStyle = '#1a0c08'; ctx.lineWidth = 0.6; ctx.stroke();
-      ctx.fillStyle = '#ff7a30';
-      ctx.beginPath(); ctx.ellipse(0, -10, 2.5, 0.9, 0, 0, Math.PI * 2); ctx.fill();
-      ctx.fillStyle = '#ffd048';
-      ctx.beginPath(); ctx.ellipse(0, -10, 1.4, 0.5, 0, 0, Math.PI * 2); ctx.fill();
-      ctx.strokeStyle = '#ff5020'; ctx.lineWidth = 0.5;
-      ctx.beginPath();
-      ctx.moveTo(-1, -9.5); ctx.lineTo(-2.5, -3.5);
-      ctx.moveTo(1.4, -9.5); ctx.lineTo(3, -3); ctx.stroke();
-      ctx.save();
-      ctx.globalAlpha = 0.55;
-      for (let k = 0; k < 3; k++) {
-        const ph = (t * 0.6 + k / 3) % 1;
-        const py = -10 - ph * 18;
-        const pr = 1.4 + ph * 3;
-        const px = Math.sin((ph + k) * 4) * 1.4;
-        ctx.fillStyle = `rgba(60,55,55,${0.7 - ph * 0.5})`;
-        ctx.beginPath(); ctx.arc(px, py, pr, 0, Math.PI * 2); ctx.fill();
-      }
-      ctx.restore();
-    });
-  }
-
-  function modWyvernPeak(island, cx, cy, t, opts = {}) {
-    const ember = opts.ember === true;
-    withSurfaceAnchor(island, cx, cy, () => {
-      ctx.beginPath();
-      ctx.moveTo(-7, 0); ctx.lineTo(-1.5, -12);
-      ctx.lineTo(0.8, -7); ctx.lineTo(7, 0); ctx.closePath();
-      const pg = ctx.createLinearGradient(0, -12, 0, 0);
-      pg.addColorStop(0, '#6a5040'); pg.addColorStop(1, '#3a2a22');
-      ctx.fillStyle = pg; ctx.fill();
-      ctx.strokeStyle = '#2a2417'; ctx.lineWidth = 0.6; ctx.stroke();
-      const wx = -1.5, wy = -12;
-      const flap = Math.sin(t * 3.5) * 0.6;
-      ctx.save();
-      ctx.translate(wx, wy);
-      if (ember) {
-        const eg = ctx.createRadialGradient(0, -3, 0, 0, -3, 14);
-        eg.addColorStop(0, 'rgba(255,140,40,0.45)');
-        eg.addColorStop(1, 'rgba(255,140,40,0)');
-        ctx.fillStyle = eg;
-        ctx.beginPath(); ctx.arc(0, -3, 14, 0, Math.PI * 2); ctx.fill();
-      }
-      ctx.fillStyle = ember ? '#5a1a10' : '#2a1f18';
-      ctx.beginPath(); ctx.ellipse(0, -2, 3.6, 1.8, 0, 0, Math.PI * 2); ctx.fill();
-      ctx.beginPath();
-      ctx.moveTo(2.2, -2.5);
-      ctx.quadraticCurveTo(5, -4, 6, -5.5);
-      ctx.lineTo(5, -4);
-      ctx.quadraticCurveTo(4, -2.5, 2.5, -1.8);
-      ctx.closePath(); ctx.fill();
-      ctx.beginPath();
-      ctx.moveTo(-2.5, -1.8);
-      ctx.quadraticCurveTo(-6, -1, -8, -3);
-      ctx.lineWidth = 0.9;
-      ctx.strokeStyle = ember ? '#5a1a10' : '#2a1f18';
-      ctx.stroke();
-      ctx.fillStyle = ember ? '#7a2818' : '#3a2820';
-      for (const side of [-1, 1]) {
-        ctx.beginPath();
-        const wingH = 7 + flap;
-        ctx.moveTo(0, -3);
-        ctx.quadraticCurveTo(side * 4, -3 - wingH, side * 8, -1 - wingH * 0.4);
-        ctx.quadraticCurveTo(side * 5, -3, side * 1, -3);
-        ctx.closePath(); ctx.fill();
-        ctx.strokeStyle = ember ? '#3a0a08' : '#1a1008';
-        ctx.lineWidth = 0.4;
-        ctx.beginPath();
-        ctx.moveTo(side * 1, -3);
-        ctx.lineTo(side * 7, -1 - wingH * 0.4);
-        ctx.stroke();
-      }
-      ctx.fillStyle = ember ? '#ffe080' : '#e6c060';
-      ctx.beginPath(); ctx.arc(4.4, -4.4, 0.4, 0, Math.PI * 2); ctx.fill();
-      ctx.restore();
-    });
-  }
-
-  function modSeashellTower(island, cx, cy, t) {
-    withSurfaceAnchor(island, cx, cy, () => {
-      ctx.beginPath();
-      ctx.moveTo(-4, 0); ctx.lineTo(-2.4, -13);
-      ctx.lineTo(2.4, -13); ctx.lineTo(4, 0); ctx.closePath();
-      const tg = ctx.createLinearGradient(-4, 0, 4, 0);
-      tg.addColorStop(0, '#caa46a'); tg.addColorStop(0.5, '#f4d6a8'); tg.addColorStop(1, '#caa46a');
-      ctx.fillStyle = tg; ctx.fill();
-      ctx.strokeStyle = '#3a2418'; ctx.lineWidth = 0.6; ctx.stroke();
-      ctx.strokeStyle = 'rgba(80,40,20,0.65)'; ctx.lineWidth = 0.5;
-      for (let k = 1; k <= 4; k++) {
-        const y = -k * 2.6;
-        const xR = 4 - (k / 4) * 1.6;
-        ctx.beginPath(); ctx.moveTo(-xR, y);
-        ctx.quadraticCurveTo(0, y + 0.5, xR, y); ctx.stroke();
-        ctx.beginPath(); ctx.moveTo(xR, y); ctx.lineTo(xR - 0.6, y + 0.6); ctx.stroke();
-      }
-      ctx.beginPath();
-      ctx.moveTo(-2.8, -13); ctx.lineTo(0, -18); ctx.lineTo(2.8, -13); ctx.closePath();
-      ctx.fillStyle = '#9a4438'; ctx.fill();
-      ctx.strokeStyle = '#2a1410'; ctx.lineWidth = 0.5; ctx.stroke();
-      ctx.fillStyle = '#f4d6a8';
-      ctx.beginPath(); ctx.arc(0, -18.4, 0.7, 0, Math.PI * 2); ctx.fill();
-      ctx.strokeStyle = '#3a2418'; ctx.lineWidth = 0.4; ctx.stroke();
-      ctx.fillStyle = '#2a1f12';
-      ctx.beginPath();
-      ctx.moveTo(-1, 0); ctx.lineTo(-1, -2.2);
-      ctx.quadraticCurveTo(0, -3, 1, -2.2);
-      ctx.lineTo(1, 0); ctx.closePath(); ctx.fill();
-    });
-  }
-
-  function modLighthouse(island, cx, cy, t) {
-    withSurfaceAnchor(island, cx, cy, () => {
-      ctx.fillStyle = '#d8d3c0';
-      ctx.fillRect(-2.6, -1, 5.2, 1.6);
-      ctx.strokeStyle = '#2a2417'; ctx.lineWidth = 0.5;
-      ctx.strokeRect(-2.6, -1, 5.2, 1.6);
-      const tw = 3.6, th = 17, stripes = 6;
-      for (let k = 0; k < stripes; k++) {
-        const y = -1 - (k + 1) * (th / stripes);
-        ctx.fillStyle = (k % 2 === 0) ? '#c9342c' : '#f4ecd6';
-        ctx.fillRect(-tw / 2, y, tw, th / stripes + 0.3);
-      }
-      ctx.strokeStyle = '#2a2417'; ctx.lineWidth = 0.5;
-      ctx.strokeRect(-tw / 2, -1 - th, tw, th);
-      const lampY = -1 - th;
-      ctx.fillStyle = '#f8e89a';
-      ctx.fillRect(-tw / 2 + 0.2, lampY - 2.2, tw - 0.4, 2.2);
-      ctx.strokeRect(-tw / 2 + 0.2, lampY - 2.2, tw - 0.4, 2.2);
-      ctx.fillStyle = '#3a3022';
-      ctx.beginPath();
-      ctx.moveTo(-tw / 2 - 0.2, lampY - 2.2);
-      ctx.lineTo(0, lampY - 6);
-      ctx.lineTo(tw / 2 + 0.2, lampY - 2.2);
-      ctx.closePath(); ctx.fill(); ctx.stroke();
-      ctx.fillStyle = '#fff4a8';
-      ctx.beginPath(); ctx.arc(0, lampY - 1.1, 0.7, 0, Math.PI * 2); ctx.fill();
-      const pulse = 0.55 + 0.45 * (0.5 + 0.5 * Math.sin(t * 2));
-      ctx.strokeStyle = `rgba(255,232,140,${0.75 * pulse})`;
-      ctx.lineWidth = 0.7; ctx.lineCap = 'round';
-      const cyL = lampY - 1.1;
-      const rays = [[-1.4, 0], [-1.0, -0.7], [0, -1], [1.0, -0.7], [1.4, 0]];
-      for (const [dx, dy] of rays) {
-        const len = 10;
-        ctx.beginPath();
-        ctx.moveTo(dx * 2, cyL + dy * 2);
-        ctx.lineTo(dx * len, cyL + dy * len);
-        ctx.stroke();
-      }
-      const glow = ctx.createRadialGradient(0, cyL, 0, 0, cyL, 6);
-      glow.addColorStop(0, `rgba(255,232,140,${0.55 * pulse})`);
-      glow.addColorStop(1, 'rgba(255,232,140,0)');
-      ctx.fillStyle = glow;
-      ctx.beginPath(); ctx.arc(0, cyL, 6, 0, Math.PI * 2); ctx.fill();
-    });
-  }
-
-  function modSunHalo(island, cx, cy, t) {
-    const radius = island.radius;
-    const pulse = 1 + Math.sin(t * 0.8) * 0.04;
-    ctx.save();
-    ctx.globalCompositeOperation = 'lighter';
-    const R = radius * 1.55 * pulse;
-    const hx = cx - radius * 0.1, hy = cy - radius * 0.25;
-    const grad = ctx.createRadialGradient(hx, hy, 0, hx, hy, R);
-    grad.addColorStop(0, 'rgba(255,235,140,0.7)');
-    grad.addColorStop(0.5, 'rgba(255,200,100,0.32)');
-    grad.addColorStop(1, 'rgba(255,180,80,0)');
-    ctx.fillStyle = grad;
-    ctx.beginPath(); ctx.arc(hx, hy, R, 0, Math.PI * 2); ctx.fill();
-    ctx.strokeStyle = 'rgba(255,220,140,0.6)';
-    ctx.lineWidth = 0.7;
-    for (let k = 0; k < 12; k++) {
-      const a = (k / 12) * Math.PI * 2 + t * 0.05;
-      const r1 = radius * 0.9, r2 = radius * 1.15;
-      ctx.beginPath();
-      ctx.moveTo(hx + Math.cos(a) * r1, hy + Math.sin(a) * r1);
-      ctx.lineTo(hx + Math.cos(a) * r2, hy + Math.sin(a) * r2);
-      ctx.stroke();
-    }
-    ctx.restore();
-  }
-
-  function modWetSheen(island, cx, cy) {
-    const radius = island.radius;
-    ctx.save();
-    ctx.globalCompositeOperation = 'lighter';
-    const gx = cx, gy = cy + radius * 0.4;
-    const grad = ctx.createRadialGradient(gx, gy, 0, gx, gy, radius * 1.5);
-    grad.addColorStop(0, 'rgba(120,200,240,0)');
-    grad.addColorStop(0.6, 'rgba(80,160,220,0.05)');
-    grad.addColorStop(0.85, 'rgba(80,180,240,0.28)');
-    grad.addColorStop(1, 'rgba(80,180,240,0)');
-    ctx.fillStyle = grad;
-    ctx.beginPath(); ctx.arc(gx, gy, radius * 1.5, 0, Math.PI * 2); ctx.fill();
-    ctx.restore();
-  }
-
-  function modDock(island, cx, cy, t) {
-    // Wooden plank + fishing rod off the right shoulder.
-    const s = island.radius / 36;
-    const sx = cx + island.radius * 0.75;
-    const sy = cy + island.radius * -0.15;
-    ctx.save();
-    ctx.translate(sx, sy);
-    ctx.scale(s, s);
-    ctx.fillStyle = '#a07238';
-    ctx.fillRect(0, -1.6, 13, 2.4);
-    ctx.strokeStyle = '#2a2417'; ctx.lineWidth = 0.6;
-    ctx.strokeRect(0, -1.6, 13, 2.4);
-    ctx.strokeStyle = 'rgba(40,25,15,0.6)'; ctx.lineWidth = 0.3;
-    for (const dx of [4, 7, 10]) {
-      ctx.beginPath(); ctx.moveTo(dx, -1.6); ctx.lineTo(dx, 0.8); ctx.stroke();
-    }
-    ctx.strokeStyle = '#3a2a18'; ctx.lineWidth = 0.8;
-    ctx.beginPath(); ctx.moveTo(11, -2); ctx.lineTo(18, -8); ctx.stroke();
-    const bob = Math.sin(t * 1.6) * 0.6;
-    ctx.strokeStyle = '#2a2417'; ctx.lineWidth = 0.35;
-    ctx.beginPath();
-    ctx.moveTo(18, -8);
-    ctx.quadraticCurveTo(19, -2 + bob, 19 + bob * 0.3, 6);
-    ctx.stroke();
-    ctx.fillStyle = '#c9342c';
-    ctx.beginPath(); ctx.arc(19 + bob * 0.3, 6, 0.7, 0, Math.PI * 2); ctx.fill();
-    ctx.fillStyle = '#5a3a20';
-    ctx.fillRect(2, -3.4, 2.5, 1.8);
-    ctx.strokeStyle = '#2a2417'; ctx.lineWidth = 0.4;
-    ctx.strokeRect(2, -3.4, 2.5, 1.8);
-    ctx.restore();
-  }
-
-  function modBellyWings(island, cx, cy, t) {
-    const radius = island.radius;
-    const flap = Math.sin(t * 1.8) * 0.22;
-    for (const side of [-1, 1]) {
-      ctx.save();
-      ctx.translate(cx + radius * 0.35 * side, cy + radius * 0.45);
-      ctx.scale(side, 1);
-      ctx.rotate(0.45 + flap);
-      const wingW = radius * 1.05;
-      const wingH = radius * 0.6;
-      ctx.beginPath();
-      ctx.moveTo(0, -2);
-      ctx.quadraticCurveTo(wingW * 0.35, -wingH * 0.35, wingW * 0.78, -wingH * 0.08);
-      ctx.lineTo(wingW * 0.95, wingH * 0.05);
-      const feathers = 6;
-      for (let k = 0; k < feathers; k++) {
-        const f0 = k / feathers;
-        const f1 = (k + 1) / feathers;
-        const pX = wingW * (0.95 - f0 * 0.85);
-        const pY = wingH * (0.05 + f0 * 0.5);
-        const vX = wingW * (0.95 - f1 * 0.85);
-        const vY = wingH * (0.05 + f1 * 0.5);
-        ctx.quadraticCurveTo(pX - wingW * 0.04, pY + wingH * 0.16, vX, vY);
-      }
-      ctx.lineTo(wingW * 0.12, wingH * 0.35);
-      ctx.quadraticCurveTo(wingW * 0.04, wingH * 0.15, 0, -2);
-      ctx.closePath();
-      const wg = ctx.createLinearGradient(0, -wingH * 0.4, wingW * 0.5, wingH * 0.5);
-      wg.addColorStop(0, '#fefdf6');
-      wg.addColorStop(0.5, '#e8e2cc');
-      wg.addColorStop(1, '#9ea58e');
-      ctx.fillStyle = wg; ctx.fill();
-      ctx.strokeStyle = '#2a2417'; ctx.lineWidth = 0.6; ctx.stroke();
-      ctx.strokeStyle = 'rgba(60,45,25,0.55)'; ctx.lineWidth = 0.4;
-      for (let k = 0; k < 6; k++) {
-        const f = k / 5;
-        const tx = wingW * (0.2 + f * 0.7);
-        const ty = wingH * (0.05 + f * 0.45);
-        ctx.beginPath();
-        ctx.moveTo(wingW * 0.05, -wingH * 0.05);
-        ctx.quadraticCurveTo(tx * 0.55, ty * 0.4, tx, ty);
-        ctx.stroke();
-      }
-      ctx.fillStyle = 'rgba(60,45,25,0.35)';
-      ctx.beginPath();
-      ctx.ellipse(wingW * 0.06, -wingH * 0.05, 2.4, 1.4, 0.3, 0, Math.PI * 2);
-      ctx.fill();
-      ctx.restore();
-    }
-  }
-
-  // Pseudo-organic island shape, deterministic by island.shape, decorated
-  // with whatever modifiers the name triggers.
+  // ----- Island drawing -----
+  // The blob + modifier drawers live in islands.js (shared with
+  // island-lab.html so the lab and the game can't drift apart). Everything
+  // there renders in blob-local space at baseline radius 36; this wrapper
+  // places and sizes the island with a canvas transform, then draws the
+  // world-space name plate on top.
   function drawIsland(i, cx, cy) {
-    const r = rng(i.shape + 1);
-    const points = 14;
-    const verts = [];
-    for (let k = 0; k < points; k++) {
-      const ang = (k / points) * Math.PI * 2;
-      const wobble = 0.75 + r() * 0.45;
-      verts.push({
-        x: cx + Math.cos(ang) * i.radius * wobble,
-        y: cy + Math.sin(ang) * i.radius * wobble
-      });
-    }
-
-    // Modifier flags. Auras and large back-pieces draw BEFORE the blob;
-    // recolors change the blob gradient; on-top mods draw AFTER.
-    const mods = i.modifiers || [];
-    const has = m => mods.includes(m);
-    const volcanic = has('asha');
-    const rocky    = has('crag');
-    const lighthouseCombo = has('sol') && has('spire');
-    const hasTopMod = lighthouseCombo
-      || has('keep') || has('spire') || has('asha')
-      || has('wyn')  || has('pyre')  || has('crag');
     const t = performance.now() * 0.001;
-
-    if (has('sol'))  modSunHalo(i, cx, cy, t);
-    if (has('tide')) modWetSheen(i, cx, cy);
-    if (has('wing')) modBellyWings(i, cx, cy, t);
-
-    // Shadow / underside
-    ctx.beginPath();
-    for (let k = 0; k < verts.length; k++) {
-      const v = verts[k];
-      if (k === 0) ctx.moveTo(v.x, v.y + 8);
-      else ctx.lineTo(v.x, v.y + 8);
-    }
-    ctx.closePath();
-    ctx.fillStyle = 'rgba(20, 30, 40, 0.4)';
-    ctx.fill();
-
-    // Body (with possible recolor)
-    ctx.beginPath();
-    for (let k = 0; k < verts.length; k++) {
-      const v = verts[k];
-      if (k === 0) ctx.moveTo(v.x, v.y);
-      else ctx.lineTo(v.x, v.y);
-    }
-    ctx.closePath();
-    const grad = ctx.createLinearGradient(cx, cy - i.radius, cx, cy + i.radius);
-    if (volcanic) {
-      grad.addColorStop(0, '#5a3a2a');
-      grad.addColorStop(0.55, '#3a2018');
-      grad.addColorStop(1, '#1a0c08');
-    } else if (rocky) {
-      grad.addColorStop(0, '#a8b0aa');
-      grad.addColorStop(0.55, '#6e766e');
-      grad.addColorStop(1, '#42463e');
-    } else {
-      grad.addColorStop(0, '#6b8a5a');
-      grad.addColorStop(0.55, '#4d6a40');
-      grad.addColorStop(1, '#3a4a2e');
-    }
-    ctx.fillStyle = grad;
-    ctx.fill();
-    ctx.strokeStyle = 'rgba(20, 25, 15, 0.7)';
-    ctx.lineWidth = 1.5;
-    ctx.stroke();
-
-    // Highlight is suppressed when a modifier sits where it would go.
-    if (!hasTopMod) {
-      ctx.beginPath();
-      ctx.arc(cx - i.radius * 0.2, cy - i.radius * 0.2, i.radius * 0.18, 0, Math.PI * 2);
-      ctx.fillStyle = volcanic ? 'rgba(255,140,80,0.45)'
-                    : rocky    ? 'rgba(220,224,218,0.55)'
-                               : 'rgba(220, 210, 160, 0.5)';
-      ctx.fill();
-    }
-
-    // Top-anchored modifier dispatch. Specific combos take precedence over
-    // single modifiers.
-    if (lighthouseCombo) {
-      modLighthouse(i, cx, cy, t);
-    } else if (has('asha') && has('keep')) {
-      modVolcano(i, cx, cy, t);
-      modCastle(i, cx, cy, t, { offset: true });
-    } else if (has('wyn') || has('pyre')) {
-      modWyvernPeak(i, cx, cy, t, { ember: has('pyre') });
-    } else if (has('asha')) {
-      modVolcano(i, cx, cy, t);
-    } else if (has('crag')) {
-      modPeaks(i, cx, cy, t);
-    } else if (has('keep')) {
-      modCastle(i, cx, cy, t);
-    } else if (has('spire')) {
-      modSeashellTower(i, cx, cy, t);
-    }
-
-    // Side-anchored modifier (fishing dock on the right shoulder).
-    if (has('tide')) modDock(i, cx, cy, t);
+    const k = i.radius / 36;
+    ctx.save();
+    ctx.translate(cx, cy);
+    ctx.scale(k, k);
+    // Inject the game's mulberry32 so silhouettes match what saved worlds
+    // have always shown; br=1 keeps idle animation always on.
+    window.SkyboundIslands.drawNamedIsland(ctx, t, 1, i.shape + 1, i.modifiers || [], { makeRng: rng });
+    ctx.restore();
 
     // Name plate if discovered
     if (i.discovered) {
@@ -1970,30 +1691,14 @@
   }
 
   // ----- Ship drawing -----
-  // Two view classes:
-  //   topdown: ship is rotated by heading; drawer renders at (0,0) facing +X.
-  //   profile: ship never rotates; flip-x by sticky facing; gentle bob.
-  //            Drawer renders at (0,0) facing +X (facing right by default).
-  // (ctx2d, t, speed01) where speed01 is normalized 0..1 against SHIP_MAX_SPEED.
-
-  const SHIP_DRAWERS = {
-    sloop:        drawShipSloop,
-    butterfly:    drawShipButterfly,
-    seaTurtle:    drawShipSeaTurtle,
-    manta:        drawShipManta,
-    jellyfish:    drawShipJellyfish,
-    wyvern:       drawShipWyvern,
-    cloudGalleon: drawShipCloudGalleon,
-    windSerpent:  drawShipWindSerpent,
-  };
-  const SHIP_VIEWS = {
-    sloop: 'topdown', butterfly: 'topdown', seaTurtle: 'topdown',
-    manta: 'topdown', jellyfish: 'topdown',
-    wyvern: 'profile', cloudGalleon: 'profile', windSerpent: 'profile',
-  };
-  // Profile ships that animate their own facing transition (instead of an
-  // instant flip-x in the dispatcher). They receive facingLeft as the 4th arg.
-  const SHIP_OWN_FACING = { windSerpent: true };
+  // The drawers themselves live in ships.js (shared with ship-lab.html so
+  // the lab and the game can't drift apart). This file owns the dispatcher:
+  // heading rotation / facing flips, wake, bob, and render-time sampling.
+  const {
+    DRAWERS: SHIP_DRAWERS,
+    VIEWS: SHIP_VIEWS,
+    OWN_FACING: SHIP_OWN_FACING,
+  } = window.SkyboundShips;
 
   // Update profile-ship facing with hysteresis so head-on north/south travel
   // doesn't cause a flip flicker.
@@ -2066,592 +1771,6 @@
     let sum = 0, max = 0;
     for (const v of shipRenderSamples) { sum += v; if (v > max) max = v; }
     return { samples: shipRenderSamples.length, avg: sum / shipRenderSamples.length, max };
-  }
-
-  function drawShipSloop(ctx, t, speed) {
-    ctx.beginPath();
-    ctx.moveTo(14, 0);
-    ctx.lineTo(-8, -7);
-    ctx.lineTo(-5, 0);
-    ctx.lineTo(-8, 7);
-    ctx.closePath();
-    ctx.fillStyle = '#c9622e';
-    ctx.fill();
-    ctx.strokeStyle = '#2a2417';
-    ctx.lineWidth = 1.2;
-    ctx.stroke();
-    ctx.beginPath();
-    ctx.moveTo(2, 0);
-    ctx.lineTo(-4, -9);
-    ctx.lineTo(-2, 0);
-    ctx.closePath();
-    ctx.fillStyle = '#f2e8d0';
-    ctx.fill();
-    ctx.stroke();
-  }
-
-  function drawShipButterfly(ctx, t, speed) {
-    const flapsPerSec = 8 + speed * 2;
-    const flap = 0.12 + 0.88 * Math.abs(Math.sin(t * flapsPerSec * Math.PI));
-    const orange = '#e07020', black = '#1a1410', cream = '#f8f0e0';
-
-    for (const side of [-1, 1]) {
-      ctx.save();
-      ctx.scale(1, side);
-      ctx.scale(1, flap);
-      // Hindwing (behind)
-      ctx.beginPath();
-      ctx.moveTo(-1, -1);
-      ctx.bezierCurveTo(-2, -6, -8, -9, -10, -6);
-      ctx.bezierCurveTo(-11, -3, -9, -0.5, -6, 0);
-      ctx.bezierCurveTo(-3, 0, -1.5, -0.5, -1, -1);
-      ctx.closePath();
-      ctx.fillStyle = black; ctx.fill();
-      ctx.beginPath();
-      ctx.moveTo(-1.5, -1.4);
-      ctx.bezierCurveTo(-3, -5.5, -7, -7.5, -8.7, -5.5);
-      ctx.bezierCurveTo(-9.5, -3, -8, -1.3, -5.5, -1);
-      ctx.bezierCurveTo(-3, -1, -2, -1.3, -1.5, -1.4);
-      ctx.closePath();
-      ctx.fillStyle = orange; ctx.fill();
-      ctx.strokeStyle = black; ctx.lineWidth = 0.35;
-      ctx.beginPath();
-      ctx.moveTo(-2, -1); ctx.quadraticCurveTo(-4, -3, -7, -5.5);
-      ctx.moveTo(-2, -1.5); ctx.quadraticCurveTo(-5, -3, -8.5, -4);
-      ctx.stroke();
-      ctx.fillStyle = cream;
-      for (const [px, py] of [[-7, -7.5], [-9.5, -5], [-7.5, -2]]) {
-        ctx.beginPath(); ctx.arc(px, py, 0.4, 0, Math.PI * 2); ctx.fill();
-      }
-      // Forewing
-      ctx.beginPath();
-      ctx.moveTo(3, -0.5);
-      ctx.bezierCurveTo(6, -7, 3, -14, -3, -13.5);
-      ctx.bezierCurveTo(-7, -11, -7, -7, -6, -4);
-      ctx.bezierCurveTo(-4, -2, -1, -1, 3, -0.5);
-      ctx.closePath();
-      ctx.fillStyle = black; ctx.fill();
-      ctx.beginPath();
-      ctx.moveTo(2.7, -1);
-      ctx.bezierCurveTo(5, -7, 2.5, -12.5, -2.5, -12);
-      ctx.bezierCurveTo(-6, -10, -6, -7, -5, -4.5);
-      ctx.bezierCurveTo(-3.5, -3, -1, -2, 2.7, -1);
-      ctx.closePath();
-      ctx.fillStyle = orange; ctx.fill();
-      ctx.strokeStyle = black; ctx.lineWidth = 0.4;
-      ctx.beginPath();
-      ctx.moveTo(2, -1.5); ctx.quadraticCurveTo(0, -6, -1.8, -11);
-      ctx.moveTo(0.5, -2); ctx.quadraticCurveTo(-2.5, -6, -4, -10);
-      ctx.moveTo(-1.5, -2.5); ctx.quadraticCurveTo(-3.5, -5, -5.2, -7);
-      ctx.stroke();
-      ctx.fillStyle = cream;
-      for (const [px, py] of [[-3, -12.5], [-1, -13], [-5, -10], [-6, -7], [-6, -4.5]]) {
-        ctx.beginPath(); ctx.arc(px, py, 0.55, 0, Math.PI * 2); ctx.fill();
-      }
-      ctx.restore();
-    }
-    // Body + head + antennae
-    ctx.beginPath();
-    ctx.ellipse(2, 0, 7, 1.8, 0, 0, Math.PI * 2);
-    ctx.fillStyle = black; ctx.fill();
-    ctx.beginPath(); ctx.arc(8, 0, 2, 0, Math.PI * 2); ctx.fill();
-    ctx.strokeStyle = black; ctx.lineWidth = 0.7;
-    ctx.beginPath();
-    ctx.moveTo(8, -1); ctx.quadraticCurveTo(12, -4, 11, -6);
-    ctx.moveTo(8, 1); ctx.quadraticCurveTo(12, 4, 11, 6);
-    ctx.stroke();
-  }
-
-  function drawShipSeaTurtle(ctx, t, speed) {
-    // Top-down sea turtle: teal palette, long front flippers, scute pattern.
-    const paddleRate = 1.2 + speed * 0.5;
-    const teal      = '#3a7a92';
-    const tealLight = '#4a8aa0';
-    const tealDeep  = '#2a5a72';
-    const ink       = '#2a2417';
-
-    const frontSwing = Math.sin(t * paddleRate);
-    const rearSwing  = Math.sin(t * paddleRate + Math.PI);
-
-    // Front flippers — long paddle, swept back, big stroke.
-    for (const side of [-1, 1]) {
-      ctx.save();
-      ctx.translate(3, 5.5 * side);
-      const base = side * 0.4;
-      ctx.rotate(base + frontSwing * 0.55 * side);
-      ctx.beginPath();
-      ctx.moveTo(0, 0);
-      ctx.quadraticCurveTo(5, -2 * side, 9.5, -1.2 * side);
-      ctx.quadraticCurveTo(11, 0, 9.5, 1.6 * side);
-      ctx.quadraticCurveTo(5, 2.4 * side, 0, 1.4 * side);
-      ctx.closePath();
-      ctx.fillStyle = tealDeep; ctx.fill();
-      ctx.strokeStyle = ink; ctx.lineWidth = 0.7; ctx.stroke();
-      ctx.restore();
-    }
-    // Rear flippers — short, swept further back.
-    for (const side of [-1, 1]) {
-      ctx.save();
-      ctx.translate(-7, 4.5 * side);
-      const base = side * 1.6;
-      ctx.rotate(base + rearSwing * 0.35 * side);
-      ctx.beginPath();
-      ctx.moveTo(0, 0);
-      ctx.quadraticCurveTo(3, -1.4 * side, 5, -0.6 * side);
-      ctx.quadraticCurveTo(5.5, 0.4 * side, 4.5, 1.4 * side);
-      ctx.quadraticCurveTo(2.5, 1.6 * side, 0, 1.2 * side);
-      ctx.closePath();
-      ctx.fillStyle = tealDeep; ctx.fill();
-      ctx.strokeStyle = ink; ctx.lineWidth = 0.6; ctx.stroke();
-      ctx.restore();
-    }
-    // Shell — teardrop, widest about 1/3 from front.
-    ctx.beginPath();
-    ctx.moveTo(11, 0);
-    ctx.bezierCurveTo(11, -5, 4, -7.5, -2, -7);
-    ctx.bezierCurveTo(-9, -6, -11, -3, -10.5, 0);
-    ctx.bezierCurveTo(-11, 3, -9, 6, -2, 7);
-    ctx.bezierCurveTo(4, 7.5, 11, 5, 11, 0);
-    ctx.closePath();
-    ctx.fillStyle = tealLight; ctx.fill();
-    ctx.strokeStyle = ink; ctx.lineWidth = 1; ctx.stroke();
-    // Scute pattern: 5 vertebral + 4 costal pairs (cross-bars + side ribs)
-    ctx.strokeStyle = 'rgba(42,36,23,0.55)'; ctx.lineWidth = 0.5;
-    for (const x of [7, 3, -1, -5, -9]) {
-      const halfH = Math.max(0, 6 - Math.abs(x + 1) * 0.55);
-      ctx.beginPath();
-      ctx.moveTo(x, -halfH); ctx.lineTo(x, halfH);
-      ctx.stroke();
-    }
-    for (const side of [-1, 1]) {
-      for (const x of [8, 4, 0, -4, -8]) {
-        const rim = Math.max(2, 6.5 - Math.abs(x + 1) * 0.45) * side;
-        ctx.beginPath();
-        ctx.moveTo(x, 0.5 * side);
-        ctx.quadraticCurveTo(x - 0.5, rim * 0.7, x - 1, rim);
-        ctx.stroke();
-      }
-    }
-    // Central ridge highlight
-    ctx.strokeStyle = 'rgba(255, 248, 224, 0.35)'; ctx.lineWidth = 0.8;
-    ctx.beginPath(); ctx.moveTo(10, 0); ctx.lineTo(-10, 0); ctx.stroke();
-    // Head — small wedge with two top eyes
-    ctx.beginPath();
-    ctx.moveTo(11, -2.2);
-    ctx.quadraticCurveTo(15, -1.6, 15.5, 0);
-    ctx.quadraticCurveTo(15, 1.6, 11, 2.2);
-    ctx.closePath();
-    ctx.fillStyle = teal; ctx.fill();
-    ctx.strokeStyle = ink; ctx.lineWidth = 0.7; ctx.stroke();
-    ctx.fillStyle = ink;
-    ctx.beginPath(); ctx.arc(13.2, -1.1, 0.45, 0, Math.PI * 2); ctx.fill();
-    ctx.beginPath(); ctx.arc(13.2,  1.1, 0.45, 0, Math.PI * 2); ctx.fill();
-    // Tail stub
-    ctx.beginPath();
-    ctx.moveTo(-10.5, -0.8); ctx.lineTo(-13, 0); ctx.lineTo(-10.5, 0.8);
-    ctx.closePath();
-    ctx.fillStyle = teal; ctx.fill();
-    ctx.strokeStyle = ink; ctx.lineWidth = 0.5; ctx.stroke();
-  }
-
-  function drawShipManta(ctx, t, speed) {
-    const wingPhase = Math.sin(t * (1.0 + speed * 0.5));
-    // Body
-    ctx.beginPath();
-    ctx.moveTo(11, 0);
-    ctx.quadraticCurveTo(8, -3, 2, -2.2);
-    ctx.lineTo(-10, -1);
-    ctx.lineTo(-10, 1);
-    ctx.lineTo(2, 2.2);
-    ctx.quadraticCurveTo(8, 3, 11, 0);
-    ctx.closePath();
-    ctx.fillStyle = '#3e556d'; ctx.fill();
-    ctx.strokeStyle = '#2a2417'; ctx.lineWidth = 0.8; ctx.stroke();
-    // Wings
-    for (const side of [-1, 1]) {
-      ctx.save();
-      ctx.scale(1, side);
-      const tip = -11 + wingPhase * 3;
-      ctx.beginPath();
-      ctx.moveTo(8, -1);
-      ctx.bezierCurveTo(4, -3, -2, tip, -9, -9 + wingPhase * 2);
-      ctx.bezierCurveTo(-5, -5, -2, -3, -8, -1);
-      ctx.closePath();
-      ctx.fillStyle = '#536e88'; ctx.fill(); ctx.stroke();
-      ctx.restore();
-    }
-    // Cephalic horns
-    for (const side of [-1, 1]) {
-      ctx.save();
-      ctx.scale(1, side);
-      ctx.beginPath();
-      ctx.moveTo(10, -1);
-      ctx.quadraticCurveTo(14, -2.5, 13, -0.5);
-      ctx.closePath();
-      ctx.fillStyle = '#3e556d'; ctx.fill(); ctx.stroke();
-      ctx.restore();
-    }
-    // Whip tail
-    ctx.beginPath();
-    ctx.moveTo(-9, 0);
-    ctx.quadraticCurveTo(-15, Math.sin(t * 1.0) * 1.6, -22, Math.sin(t * 1.0 + 1) * 2);
-    ctx.lineWidth = 0.9; ctx.stroke();
-    // Eyes
-    for (const side of [-1, 1]) {
-      ctx.beginPath();
-      ctx.arc(8, side * 1.2, 0.55, 0, Math.PI * 2);
-      ctx.fillStyle = '#f2e8d0'; ctx.fill();
-    }
-  }
-
-  function drawShipJellyfish(ctx, t, speed) {
-    const pulse = 1 + Math.sin(t * 2.2) * 0.09;
-    const len = 7 + speed * 16;
-    const wigAmp = 0.7 + speed * 1.4;
-    const wigRate = 1.8 + speed * 1.6;
-
-    function backX(y) {
-      const k = y / 8;
-      return 1.6 - 1.8 * (1 - k * k);
-    }
-
-    // Tendrils streaming behind
-    ctx.strokeStyle = 'rgba(120, 70, 130, 0.85)';
-    ctx.lineCap = 'round'; ctx.lineWidth = 1.1;
-    const tendrils = 5;
-    for (let i = 0; i < tendrils; i++) {
-      const ty = (i - (tendrils - 1) / 2) * 2.6;
-      const tx = backX(ty) * pulse;
-      const sy = ty * pulse;
-      const wig = Math.sin(t * wigRate + i * 0.8) * wigAmp;
-      ctx.beginPath();
-      ctx.moveTo(tx, sy);
-      ctx.bezierCurveTo(
-        tx - len * 0.35, sy + wig * 1.1,
-        tx - len * 0.75, sy + wig * 1.7,
-        tx - len,        sy + wig * 2.2
-      );
-      ctx.stroke();
-    }
-    ctx.lineCap = 'butt';
-
-    // Bell
-    ctx.save();
-    ctx.scale(pulse, pulse);
-    ctx.beginPath();
-    ctx.ellipse(2, 0, 10, 8, 0, -Math.PI / 2, Math.PI / 2);
-    ctx.bezierCurveTo(0, 5, 0, -5, 2, -8);
-    ctx.closePath();
-    const grad = ctx.createRadialGradient(4, -2, 0, 4, -2, 14);
-    grad.addColorStop(0, 'rgba(245, 210, 230, 0.92)');
-    grad.addColorStop(1, 'rgba(180, 130, 180, 0.78)');
-    ctx.fillStyle = grad; ctx.fill();
-    ctx.strokeStyle = 'rgba(80, 40, 80, 0.55)';
-    ctx.lineWidth = 0.9; ctx.stroke();
-    ctx.strokeStyle = 'rgba(120, 70, 130, 0.4)';
-    ctx.lineWidth = 0.6;
-    for (let i = -1; i <= 1; i++) {
-      const a = i * 0.45;
-      ctx.beginPath();
-      ctx.moveTo(2, 0);
-      ctx.lineTo(2 + Math.cos(a) * 10, Math.sin(a) * 8);
-      ctx.stroke();
-    }
-    ctx.restore();
-    // Highlight
-    ctx.beginPath();
-    ctx.ellipse(6, -3, 2, 1.2, -0.5, 0, Math.PI * 2);
-    ctx.fillStyle = 'rgba(255, 255, 255, 0.55)'; ctx.fill();
-  }
-
-  // Per-canvas animation state for the wind serpent. WeakMap so the game's
-  // main canvas and each hangar preview canvas keep independent state.
-  const wsStateMap = new WeakMap();
-
-  function drawShipWindSerpent(ctx, t, speed, facingLeft = false) {
-    // Profile view. Turning is animated as: bunch up onto the head,
-    // invisibly flip facing while bunched, then extend out in the new
-    // direction. Preserves "up" (horn + eye stay on top) throughout.
-    const segs = 7;
-    const segLen = 4.2;
-    const amp = 3.2;
-    const target = facingLeft ? Math.PI : 0;
-
-    let st = wsStateMap.get(ctx);
-    if (!st) {
-      st = { facing: target, bunch: 0, lastT: t };
-      wsStateMap.set(ctx, st);
-    }
-    const dt = Math.min(0.1, Math.max(0, t - st.lastT));
-    st.lastT = t;
-
-    // Animation: target reached when bunch goes 0 → 1 → 0.
-    // bunchRate = 2.0 → ~0.5s bunch + ~0.5s extend = ~1.0s total turn.
-    const bunchRate = 2.0;
-    if (st.facing !== target) {
-      st.bunch += bunchRate * dt;
-      if (st.bunch >= 1) { st.bunch = 1; st.facing = target; }
-    } else if (st.bunch > 0) {
-      st.bunch -= bunchRate * dt;
-      if (st.bunch < 0) st.bunch = 0;
-    }
-
-    const bunch = st.bunch;
-    const facing = st.facing;           // 0 (right) or π (left), no in-between
-    const trailAng = facing + Math.PI;  // body extends opposite of facing
-
-    // While bunching, segment length shrinks and wiggle dampens. A small
-    // per-segment coil rotation makes the body curl as it compresses.
-    const effSegLen = segLen * (1 - bunch * 0.92);
-    const effAmp = amp * (1 - bunch * 0.6);
-    const coilAmount = bunch * Math.PI * 0.5;
-    const coilSign = facing === 0 ? -1 : 1;
-
-    const wigRate = 2.6 + speed * 1;
-    const points = [];
-    let x = 0, y = 0;
-    for (let i = 0; i < segs; i++) {
-      const along = i / (segs - 1);
-      const segTrail = trailAng + coilSign * coilAmount * along;
-      const wig = Math.sin(t * wigRate - i * 0.9) * effAmp * along;
-      const perpX = -Math.sin(segTrail);
-      const perpY =  Math.cos(segTrail);
-      points.push({ x: x + perpX * wig, y: y + perpY * wig, r: 4.6 - along * 3.6 });
-      x += effSegLen * Math.cos(segTrail);
-      y += effSegLen * Math.sin(segTrail);
-    }
-
-    // Center on COM so the head doesn't drift relative to the camera.
-    let cmx = 0, cmy = 0;
-    for (const p of points) { cmx += p.x; cmy += p.y; }
-    cmx /= segs; cmy /= segs;
-    for (const p of points) { p.x -= cmx; p.y -= cmy; }
-
-    // Body — tail first so head draws on top.
-    ctx.strokeStyle = '#2a2417'; ctx.lineWidth = 0.8;
-    for (let i = segs - 1; i >= 1; i--) {
-      const p = points[i];
-      ctx.beginPath();
-      ctx.arc(p.x, p.y, p.r, 0, Math.PI * 2);
-      ctx.fillStyle = '#8a4eb0'; ctx.fill();
-      ctx.stroke();
-    }
-
-    // Head + winglets — flipped along x for left-facing, never rotated, so
-    // the horn and eye stay on top.
-    const head = points[0];
-    ctx.save();
-    ctx.translate(head.x, head.y);
-    if (facing === Math.PI) ctx.scale(-1, 1);
-    const wingFlap = Math.sin(t * (5.5 + speed * 1.5)) * 0.45;
-    for (const side of [-1, 1]) {
-      ctx.save();
-      ctx.scale(1, side);
-      ctx.rotate(-0.35 + wingFlap);
-      ctx.beginPath();
-      ctx.moveTo(-2, 0);
-      ctx.quadraticCurveTo(-5, -9, -12, -7);
-      ctx.quadraticCurveTo(-7, -3, -3, -1);
-      ctx.closePath();
-      ctx.fillStyle = '#b07cd0'; ctx.fill(); ctx.stroke();
-      ctx.restore();
-    }
-    ctx.beginPath();
-    ctx.moveTo(5, 0);
-    ctx.quadraticCurveTo(3, -4, -3, -3);
-    ctx.lineTo(-3, 3);
-    ctx.quadraticCurveTo(3, 4, 5, 0);
-    ctx.closePath();
-    ctx.fillStyle = '#8a4eb0'; ctx.fill(); ctx.stroke();
-    ctx.beginPath();
-    ctx.moveTo(-1, -3); ctx.lineTo(-3, -6); ctx.lineTo(0, -4);
-    ctx.closePath();
-    ctx.fillStyle = '#f2e8d0'; ctx.fill(); ctx.stroke();
-    ctx.beginPath();
-    ctx.arc(1.5, -1, 0.8, 0, Math.PI * 2);
-    ctx.fillStyle = '#f2e8d0'; ctx.fill();
-    ctx.beginPath();
-    ctx.arc(2, -1, 0.4, 0, Math.PI * 2);
-    ctx.fillStyle = '#2a2417'; ctx.fill();
-    ctx.restore();
-  }
-
-  function drawShipWyvern(ctx, t, speed) {
-    const flap = Math.sin(t * 2.8);
-    const tailSwish = Math.sin(t * 1.9 + 0.5);
-    const bodyFill = '#7a4a9a', bodyDark = '#54306a';
-
-    // Far wing (behind)
-    ctx.save();
-    ctx.translate(-1, -1);
-    ctx.rotate(-1.2 + flap * 0.35);
-    ctx.beginPath();
-    ctx.moveTo(0, 0); ctx.lineTo(-1, -10);
-    ctx.quadraticCurveTo(-5, -8, -7, -5);
-    ctx.quadraticCurveTo(-8, -3, -7, -1);
-    ctx.quadraticCurveTo(-3, -0.5, 0, 0);
-    ctx.closePath();
-    ctx.fillStyle = bodyDark; ctx.fill();
-    ctx.strokeStyle = '#2a2417'; ctx.lineWidth = 0.6; ctx.stroke();
-    ctx.restore();
-
-    // Tail
-    ctx.strokeStyle = '#2a2417'; ctx.lineWidth = 0.8;
-    ctx.beginPath();
-    ctx.moveTo(-5, 0);
-    ctx.quadraticCurveTo(-12, tailSwish * 2, -17, tailSwish * 4);
-    ctx.quadraticCurveTo(-12, tailSwish * 2 + 0.8, -5, 1);
-    ctx.closePath();
-    ctx.fillStyle = bodyFill; ctx.fill(); ctx.stroke();
-    ctx.save();
-    ctx.translate(-17, tailSwish * 4);
-    ctx.rotate(tailSwish * 0.4 + Math.PI);
-    ctx.beginPath();
-    ctx.moveTo(0, 0); ctx.lineTo(2.5, -1.8); ctx.lineTo(1.5, 0); ctx.lineTo(2.5, 1.8);
-    ctx.closePath();
-    ctx.fillStyle = bodyFill; ctx.fill(); ctx.stroke();
-    ctx.restore();
-
-    // Body
-    ctx.beginPath(); ctx.ellipse(-1, 0, 6, 3, 0, 0, Math.PI * 2);
-    ctx.fillStyle = bodyFill; ctx.fill();
-    ctx.lineWidth = 1; ctx.stroke();
-
-    // Legs
-    ctx.beginPath();
-    ctx.moveTo(-1, 2); ctx.lineTo(0, 6); ctx.lineTo(2, 6);
-    ctx.lineWidth = 1.4; ctx.stroke();
-    ctx.lineWidth = 0.5;
-    ctx.beginPath();
-    ctx.moveTo(0, 6); ctx.lineTo(-1, 6.8);
-    ctx.moveTo(1, 6); ctx.lineTo(1, 6.8);
-    ctx.moveTo(2, 6); ctx.lineTo(3, 6.8);
-    ctx.stroke();
-
-    // Neck
-    ctx.beginPath();
-    ctx.moveTo(4, -1); ctx.quadraticCurveTo(8, -5, 11, -4);
-    ctx.lineTo(11, -1); ctx.quadraticCurveTo(8, 0.5, 4, 1.5);
-    ctx.closePath();
-    ctx.fillStyle = bodyFill; ctx.fill();
-    ctx.lineWidth = 0.9; ctx.stroke();
-
-    // Head
-    ctx.save();
-    ctx.translate(11, -3);
-    ctx.beginPath();
-    ctx.moveTo(0, -1); ctx.lineTo(5, 0); ctx.lineTo(5, 2); ctx.lineTo(0, 2.5);
-    ctx.quadraticCurveTo(-1.5, 0.7, 0, -1);
-    ctx.closePath();
-    ctx.fillStyle = bodyFill; ctx.fill(); ctx.stroke();
-    ctx.beginPath();
-    ctx.moveTo(0, -0.8); ctx.lineTo(-2, -3.5); ctx.lineTo(1.5, -1.5);
-    ctx.closePath();
-    ctx.fillStyle = '#f2e8d0'; ctx.fill(); ctx.stroke();
-    ctx.beginPath(); ctx.arc(2, 0.5, 0.7, 0, Math.PI * 2);
-    ctx.fillStyle = '#f5d040'; ctx.fill();
-    ctx.beginPath(); ctx.arc(2.3, 0.5, 0.3, 0, Math.PI * 2);
-    ctx.fillStyle = '#2a2417'; ctx.fill();
-    ctx.beginPath(); ctx.arc(4.5, 1.4, 0.3, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.restore();
-
-    // Near wing (in front)
-    ctx.save();
-    ctx.translate(1, -1);
-    ctx.rotate(-1.0 - flap * 0.35);
-    ctx.beginPath();
-    ctx.moveTo(0, 0); ctx.lineTo(0, -12);
-    ctx.quadraticCurveTo(-5, -9, -7, -6);
-    ctx.quadraticCurveTo(-9, -3, -8, -1);
-    ctx.quadraticCurveTo(-4, -0.5, 0, 0);
-    ctx.closePath();
-    ctx.fillStyle = bodyFill; ctx.fill();
-    ctx.strokeStyle = '#2a2417'; ctx.lineWidth = 0.8; ctx.stroke();
-    ctx.strokeStyle = 'rgba(42,36,23,0.55)'; ctx.lineWidth = 0.4;
-    ctx.beginPath();
-    ctx.moveTo(0, 0); ctx.lineTo(0, -12);
-    ctx.moveTo(0, 0); ctx.lineTo(-7, -6);
-    ctx.moveTo(0, 0); ctx.lineTo(-8, -1);
-    ctx.stroke();
-    ctx.restore();
-  }
-
-  function drawShipCloudGalleon(ctx, t, speed) {
-    const w = 9;
-    // Cloud
-    ctx.fillStyle = '#ffffff';
-    ctx.strokeStyle = 'rgba(80, 110, 140, 0.55)';
-    ctx.lineWidth = 0.6;
-    ctx.beginPath();
-    ctx.arc(-5, 6.5, 3, 0, Math.PI * 2);
-    ctx.arc(0, 7, 3.6, 0, Math.PI * 2);
-    ctx.arc(5, 6.5, 3, 0, Math.PI * 2);
-    ctx.fill(); ctx.stroke();
-    ctx.save();
-    ctx.globalAlpha = 0.18; ctx.fillStyle = '#5a6a7c';
-    ctx.beginPath(); ctx.ellipse(0, 10, 7, 1.2, 0, 0, Math.PI * 2); ctx.fill();
-    ctx.restore();
-
-    // Bowl hull
-    ctx.beginPath();
-    ctx.moveTo(-w, -2.8); ctx.lineTo(-w, 0.8);
-    ctx.quadraticCurveTo(-w * 0.6, 4.4, 0, 4.6);
-    ctx.quadraticCurveTo(w * 0.6, 4.4, w * 0.85, 1.2);
-    ctx.lineTo(w * 1.15, -1.6); ctx.lineTo(-w, -2.8);
-    ctx.closePath();
-    ctx.fillStyle = '#a06030'; ctx.fill();
-    ctx.strokeStyle = '#2a2417'; ctx.lineWidth = 1; ctx.stroke();
-    ctx.beginPath();
-    ctx.moveTo(-w, -2.8); ctx.lineTo(w * 0.7, -2.8);
-    ctx.lineWidth = 0.7; ctx.stroke();
-    ctx.strokeStyle = 'rgba(42,36,23,0.35)'; ctx.lineWidth = 0.4;
-    ctx.beginPath();
-    ctx.moveTo(-w + 0.6, 0); ctx.quadraticCurveTo(0, 2.8, w * 0.85, 0);
-    ctx.stroke();
-
-    // Mast + sail
-    ctx.strokeStyle = '#2a2417'; ctx.lineWidth = 1;
-    ctx.beginPath(); ctx.moveTo(0, -2.8); ctx.lineTo(0, -11); ctx.stroke();
-    ctx.beginPath();
-    ctx.moveTo(-3, -10); ctx.lineTo(3, -10);
-    ctx.lineTo(3, -3.5); ctx.lineTo(-3, -3.5);
-    ctx.closePath();
-    ctx.fillStyle = '#f2e8d0'; ctx.fill();
-    ctx.lineWidth = 0.6; ctx.stroke();
-
-    // Crow's nest
-    ctx.beginPath(); ctx.rect(-2.2, -13, 4.4, 2);
-    ctx.fillStyle = '#a06030'; ctx.fill();
-    ctx.strokeStyle = '#2a2417'; ctx.lineWidth = 0.5; ctx.stroke();
-    for (const dx of [-2, -1, 0, 1, 2]) {
-      ctx.beginPath();
-      ctx.moveTo(dx, -13); ctx.lineTo(dx, -14.6);
-      ctx.stroke();
-    }
-
-    // Big flapping wings
-    const flapRate = 4 + speed * 2;
-    const flap = 0.3 + 0.7 * (0.5 + 0.5 * Math.sin(t * flapRate));
-    for (const side of [-1, 1]) {
-      ctx.save();
-      ctx.scale(1, side);
-      ctx.translate(-2, -1);
-      ctx.scale(1, flap);
-      ctx.beginPath();
-      ctx.moveTo(0, 0);
-      ctx.bezierCurveTo(2, -10, -8, -14, -10, -6);
-      ctx.bezierCurveTo(-6, -3, -2, -1, 0, 0);
-      ctx.closePath();
-      ctx.fillStyle = '#f0e0c0'; ctx.fill();
-      ctx.strokeStyle = '#2a2417'; ctx.lineWidth = 0.6; ctx.stroke();
-      ctx.strokeStyle = 'rgba(42,36,23,0.4)'; ctx.lineWidth = 0.4;
-      ctx.beginPath();
-      ctx.moveTo(0, 0); ctx.lineTo(-6, -8);
-      ctx.moveTo(0, 0); ctx.lineTo(-10, -6);
-      ctx.stroke();
-      ctx.restore();
-    }
   }
 
   // Wall-of-cloud surrounding the ellipse: solid fill outside, soft falloff
@@ -2771,6 +1890,41 @@
     }
   }
 
+  // Rumored isles: an ✕ over the spot, drawn above fog like the target
+  // marker — you paid for the lead, the chart remembers it.
+  function drawRumorMarkers() {
+    const markers = activeRumorMarkers();
+    if (!markers.length) return;
+    const t = performance.now() * 0.001;
+    for (const r of markers) {
+      const sx = r.x - camera.x + viewW / 2;
+      const sy = r.y - camera.y + viewH / 2;
+      if (sx < -40 || sx > viewW + 40 || sy < -40 || sy > viewH + 40) continue;
+      ctx.save();
+      ctx.globalAlpha = 0.75 + Math.sin(t * 2.2) * 0.15;
+      ctx.lineCap = 'round';
+      const s = 7;
+      // Dark underlay so the ✕ reads over parted sky as well as fog.
+      ctx.strokeStyle = 'rgba(20, 16, 10, 0.55)';
+      ctx.lineWidth = 4.5;
+      ctx.beginPath();
+      ctx.moveTo(sx - s, sy - s); ctx.lineTo(sx + s, sy + s);
+      ctx.moveTo(sx + s, sy - s); ctx.lineTo(sx - s, sy + s);
+      ctx.stroke();
+      ctx.strokeStyle = '#e08050';
+      ctx.lineWidth = 2.4;
+      ctx.stroke();
+      // Slowly turning dashed ring, like a circled spot on a chart.
+      ctx.setLineDash([4, 4]);
+      ctx.lineDashOffset = -t * 6;
+      ctx.lineWidth = 1.3;
+      ctx.beginPath();
+      ctx.arc(sx, sy, 14, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.restore();
+    }
+  }
+
   function drawTargetMarker() {
     if (!state.target) return;
     const sx = state.target.x - camera.x + viewW / 2;
@@ -2817,6 +1971,19 @@
     const headerEl = document.getElementById('map-header');
     if (headerEl) headerEl.textContent = `Chart — ${LAYER_NAMES[state.layer]}`;
 
+    // Voyage ledger in the footer: whole-voyage progress, not just this layer.
+    const hintEl = document.getElementById('map-hint');
+    if (hintEl) {
+      let disc = 0, totalIsles = 0;
+      for (const layer of state.layers) {
+        totalIsles += layer.islands.length;
+        for (const i of layer.islands) if (i.discovered) disc++;
+      }
+      hintEl.textContent =
+        `${disc}/${totalIsles} isles · ${state.mountsSeen.length}/${SHIPS.length} mounts · ` +
+        `${state.delivered.length} deliveries — tap to close`;
+    }
+
     // Parchment background tone (the card itself is parchment; this is the "sea")
     miniCtx.fillStyle = 'rgba(232, 218, 188, 1)';
     miniCtx.fillRect(0, 0, miniW, miniH);
@@ -2843,15 +2010,7 @@
     const revealRad = REVEAL_RADIUS * scale;
     miniCtx.globalCompositeOperation = 'destination-out';
     for (const r of state.reveals) {
-      const rx = wx(r.x), ry = wy(r.y);
-      const g = miniCtx.createRadialGradient(rx, ry, revealRad * 0.3, rx, ry, revealRad);
-      g.addColorStop(0, 'rgba(0,0,0,1)');
-      g.addColorStop(0.7, 'rgba(0,0,0,0.85)');
-      g.addColorStop(1, 'rgba(0,0,0,0)');
-      miniCtx.fillStyle = g;
-      miniCtx.beginPath();
-      miniCtx.arc(rx, ry, revealRad, 0, Math.PI * 2);
-      miniCtx.fill();
+      paintRevealGradient(miniCtx, wx(r.x), wy(r.y), revealRad);
     }
     miniCtx.globalCompositeOperation = 'source-over';
     miniCtx.restore();
@@ -2897,6 +2056,26 @@
       if (tx + lw > miniW - 4) tx = x - 5 - lw;
       miniCtx.fillStyle = 'rgba(42, 36, 23, 0.85)';
       miniCtx.fillText(label, tx, ty);
+    }
+
+    // Rumored isles: a faint hollow dot (charted by hearsay, no name yet)
+    // circled by an ✕ until you actually find the place.
+    for (const r of activeRumorMarkers()) {
+      const x = wx(r.x), y = wy(r.y);
+      miniCtx.beginPath();
+      miniCtx.arc(x, y, 3, 0, Math.PI * 2);
+      miniCtx.fillStyle = 'rgba(58, 74, 46, 0.25)';
+      miniCtx.fill();
+      miniCtx.strokeStyle = 'rgba(42, 36, 23, 0.45)';
+      miniCtx.lineWidth = 0.8;
+      miniCtx.stroke();
+      miniCtx.strokeStyle = 'rgba(201, 98, 46, 0.9)';
+      miniCtx.lineWidth = 1.6;
+      miniCtx.lineCap = 'round';
+      miniCtx.beginPath();
+      miniCtx.moveTo(x - 6, y - 6); miniCtx.lineTo(x + 6, y + 6);
+      miniCtx.moveTo(x + 6, y - 6); miniCtx.lineTo(x - 6, y + 6);
+      miniCtx.stroke();
     }
 
     // Target marker
@@ -3031,6 +2210,9 @@
     // back. Closer islands ride higher on the alpha scale.
     drawEdgeLabels();
 
+    // Rumor markers on top of fog — chart knowledge, not line of sight
+    drawRumorMarkers();
+
     // Target marker on top of fog (so you can see it through fog faintly)
     drawTargetMarker();
 
@@ -3115,17 +2297,20 @@
       const d = Math.hypot(state.target.x - state.ship.x, state.target.y - state.ship.y);
       destEl.textContent = state.target.name || 'Open sky';
       distEl.textContent = Math.round(d) + ' lg';
+      setLandTarget(null);
     } else {
-      let dockedAt = null;
-      for (const i of state.islands) {
-        const dx = i.x - state.ship.x, dy = i.y - state.ship.y;
-        if (dx*dx + dy*dy < (i.radius + 12) * (i.radius + 12)) { dockedAt = i; break; }
-      }
+      const dockedAt = islandAt(state.ship.x, state.ship.y, DOCK_PAD);
       destEl.textContent = dockedAt ? `Docked at ${dockedAt.name}` : 'Adrift';
       distEl.textContent = '—';
+      setLandTarget(state.transition ? null : dockedAt);
     }
-    const disc = state.islands.filter(i => i.discovered).length;
-    countEl.textContent = `${disc} / ${state.islands.length} isles`;
+    // Discovery spans the whole voyage — all three altitudes.
+    let disc = 0, totalIsles = 0;
+    for (const layer of state.layers) {
+      totalIsles += layer.islands.length;
+      for (const i of layer.islands) if (i.discovered) disc++;
+    }
+    countEl.textContent = `${disc} / ${totalIsles} isles`;
     updateAltitudeUI();
   }
 
@@ -3137,6 +2322,14 @@
   let lastDt = 0;
   function loop(now) {
     frameCount++;
+    // While ashore the 3D village owns the screen; don't burn battery
+    // simulating and painting a map nobody can see. The ship is docked, so
+    // nothing on the map needs to advance.
+    if (villageOpen) {
+      lastT = now;
+      requestAnimationFrame(loop);
+      return;
+    }
     try {
       let dt = (now - lastT) / 1000;
       if (dt > 0.1) dt = 0.1;
@@ -3184,10 +2377,9 @@
         get shipRenderMs() { return shipRenderStats(); },
         teleportRandom() {
           const r = rng((Math.random() * 1e9) | 0);
-          let u, v;
-          do { u = r() * 2 - 1; v = r() * 2 - 1; } while (u*u + v*v > 1);
-          state.ship.x = WORLD.cx + u * (WORLD.rx - 200);
-          state.ship.y = WORLD.cy + v * (WORLD.ry - 200);
+          const p = randomPointInEllipse(r, 200);
+          state.ship.x = p.x;
+          state.ship.y = p.y;
           state.ship.vx = 0; state.ship.vy = 0;
           camera.x = state.ship.x; camera.y = state.ship.y;
           state.target = null;
@@ -3198,13 +2390,18 @@
           // Stamp reveals on a grid, but only inside the ellipse
           for (let x = 0; x < WORLD.w; x += REVEAL_RADIUS) {
             for (let y = 0; y < WORLD.h; y += REVEAL_RADIUS) {
-              const ex = (x - WORLD.cx) / WORLD.rx;
-              const ey = (y - WORLD.cy) / WORLD.ry;
-              if (ex*ex + ey*ey <= 1) state.reveals.push({ x, y });
+              if (insideWorldEllipse(x, y)) state.reveals.push({ x, y });
             }
           }
           bakeFog();
           DBG?.push('info', `revealed all (${state.reveals.length} stamps)`);
+        },
+        wipeSave() {
+          try {
+            localStorage.removeItem(SAVE_KEY);
+            localStorage.removeItem(LEGACY_SAVE_KEY);
+            DBG?.push('info', 'save wiped (' + SAVE_KEY + ')');
+          } catch(e) { DBG?.push('err', 'wipe failed: ' + (e.message || e)); }
         },
         // Internals surfaced for the test harness. Intentionally minimal —
         // tests use this; production code shouldn't.
@@ -3233,8 +2430,19 @@
           setTarget(x, y, name = null) { state.target = { x, y, name }; },
           clearTarget() { state.target = null; },
           ascend, descend, beginTransition,
+          openVillage, closeVillage, villageSeedFor, villageBuildingCount,
+          askRumorAt, rumorKey, activeRumorMarkers, markUnfoundIsle,
+          setRumorRoll(fn) { rumorRoll = fn; },
+          islandGoods, takeGoodAt, deliverGoodAt,
+          shipsAvailableAt, openHangar, closeHangar,
+          get SHIPS() { return SHIPS; },
+          get SHIP_HOME_LAYER() { return SHIP_HOME_LAYER; },
+          setVillageLoader(fn) { villageLoader = fn; },
+          get villageOpen() { return villageOpen; },
+          get villageView() { return villageView; },
           get saveKey() { return SAVE_KEY; },
           constants: {
+            SAVE_SCHEMA,
             WORLD, ISLAND_COUNT, MIN_ISLAND_DIST,
             REVEAL_RADIUS, DEDUP_RADIUS, REVEAL_STEP, FOG_SCALE,
             DISCOVERY_RADIUS,
@@ -3295,12 +2503,15 @@
 
     function startVoyage(mapSize) {
       localStorage.removeItem(SAVE_KEY);
-      localStorage.removeItem('skybound-poc-v2');
+      localStorage.removeItem(LEGACY_SAVE_KEY);
       state = newState(mapSize);
       camera.x = state.ship.x;
       camera.y = state.ship.y;
       lastRevealX = state.ship.x; lastRevealY = state.ship.y;
       bakeFog();
+      // Persist right away — the 1.5s auto-save window is long enough to lose
+      // a fresh voyage if the app closes immediately after this.
+      saveState();
       window.__DBG?.push('info', `new ${mapSize} voyage`);
     }
 
@@ -3334,108 +2545,391 @@
       });
     }
 
-    // ----- Hangar -----
-    const SHIPS = [
-      { id: 'sloop',        name: 'Sloop' },
-      { id: 'butterfly',    name: 'Butterfly' },
-      { id: 'seaTurtle',    name: 'Sea turtle' },
-      { id: 'manta',        name: 'Manta ray' },
-      { id: 'jellyfish',    name: 'Jellyfish' },
-      { id: 'wyvern',       name: 'Wyvern' },
-      { id: 'cloudGalleon', name: 'Cloud galleon' },
-      { id: 'windSerpent',  name: 'Wind serpent' },
-    ];
-    const hangarMenuItem = document.getElementById('hangar-menu-item');
-    const hangarOverlay  = document.getElementById('hangar-overlay');
-    const hangarClose    = document.getElementById('hangar-close');
-    const hangarGrid     = document.getElementById('hangar-grid');
-    const hangarEmpty    = document.getElementById('hangar-empty');
-
-    function isDocked() {
-      for (const i of state.islands) {
-        const dx = i.x - state.ship.x, dy = i.y - state.ship.y;
-        if (dx*dx + dy*dy < (i.radius + 12) * (i.radius + 12)) return true;
-      }
-      return false;
-    }
-
-    const hangarCanvases = [];   // {id, ctx, W, H}
-    function buildHangarGrid() {
-      hangarGrid.innerHTML = '';
-      hangarCanvases.length = 0;
-      const dpr = window.devicePixelRatio || 1;
-      for (const s of SHIPS) {
-        const card = document.createElement('div');
-        card.className = 'hangar-card' + (s.id === state.shipType ? ' selected' : '');
-        card.dataset.shipId = s.id;
-        const tag = s.id === state.shipType ? '<span class="hc-tag">Current</span>' : '';
-        card.innerHTML = `<div class="hc-name">${s.name}</div><canvas></canvas>${tag}`;
-        hangarGrid.appendChild(card);
-        const canvas = card.querySelector('canvas');
-        const W = 180, H = 120;
-        canvas.width = W * dpr; canvas.height = H * dpr;
-        const cctx = canvas.getContext('2d');
-        cctx.scale(dpr, dpr);
-        hangarCanvases.push({ id: s.id, ctx: cctx, W, H });
-
-        card.addEventListener('click', () => {
-          if (!isDocked()) return;
-          state.shipType = s.id;
-          saveState();
-          buildHangarGrid();      // refresh selection state
-          window.__DBG?.push('info', `ship → ${s.id}`);
-        });
-      }
-    }
-
-    let hangarRafId = null;
-    function renderHangarFrame(tMs) {
-      const t = tMs * 0.001;
-      for (const c of hangarCanvases) {
-        const { ctx: hctx, W, H } = c;
-        // Sky
-        const g = hctx.createLinearGradient(0, 0, 0, H);
-        g.addColorStop(0, '#aac3da'); g.addColorStop(1, '#d4dde5');
-        hctx.fillStyle = g;
-        hctx.fillRect(0, 0, W, H);
-        // Center the ship at game scale, gentle bob, "sailing"
-        hctx.save();
-        hctx.translate(W / 2, H / 2 + Math.sin(t * 1.2) * 1.6);
-        (SHIP_DRAWERS[c.id] || SHIP_DRAWERS.sloop)(hctx, t, 0.8);
-        hctx.restore();
-      }
-      hangarRafId = requestAnimationFrame(renderHangarFrame);
-    }
-
-    function openHangar() {
-      setMenu(false);
-      buildHangarGrid();
-      const docked = isDocked();
-      hangarGrid.style.display = docked ? 'grid' : 'none';
-      hangarEmpty.style.display = docked ? 'none' : 'block';
-      hangarOverlay.classList.add('open');
-      hangarOverlay.setAttribute('aria-hidden', 'false');
-      if (hangarRafId == null) hangarRafId = requestAnimationFrame(renderHangarFrame);
-    }
-    function closeHangar() {
-      hangarOverlay.classList.remove('open');
-      hangarOverlay.setAttribute('aria-hidden', 'true');
-      if (hangarRafId != null) { cancelAnimationFrame(hangarRafId); hangarRafId = null; }
-    }
-
-    if (hangarMenuItem) {
-      hangarMenuItem.addEventListener('click', (e) => {
-        e.stopPropagation();
-        openHangar();
-      });
-    }
-    if (hangarClose) hangarClose.addEventListener('click', closeHangar);
-    if (hangarOverlay) {
-      hangarOverlay.addEventListener('click', (e) => {
-        if (e.target === hangarOverlay) closeHangar();
-      });
-    }
   })();
+
+  // ----- The Skywright's stable (was: menu hangar) -----
+  // Mounts are creatures and craft that live somewhere, so the stable is
+  // reached from a village's Skywright's Tent — not a menu. What's stabled
+  // is deterministic per (voyage, island): every mount favors a home
+  // altitude (sea-beasts near the ocean below, wind-things up high), and
+  // each is guaranteed stabled at one isle of its home layer per voyage, so
+  // the full collection is always findable.
+  const SHIPS = window.SkyboundShips.CATALOG;
+  const SHIP_HOME_LAYER = {
+    wyvern: 0, windSerpent: 0,               // High Reaches
+    sloop: 1, butterfly: 1, cloudGalleon: 1, // Cloud Sea
+    seaTurtle: 2, manta: 2, jellyfish: 2,    // Hollow Deeps, over the sea
+  };
+
+  function stableHash(str) {
+    let h = state.seed >>> 0;
+    for (let i = 0; i < str.length; i++) h = Math.imul(h ^ str.charCodeAt(i), 0x01000193) >>> 0;
+    return rng(h)();
+  }
+
+  function shipsAvailableAt(island) {
+    const key = rumorKey(island);
+    const avail = [];
+    for (const s of SHIPS) {
+      const home = (SHIP_HOME_LAYER[s.id] ?? 1) === state.layer;
+      if (stableHash(key + '|' + s.id) < (home ? 0.6 : 0.18)) {
+        avail.push(s.id);
+      } else if (home) {
+        // Findability guarantee: one designated isle per mount on its
+        // home layer always stables it.
+        const idx = Math.floor(stableHash('guarantee|' + s.id) * state.islands.length);
+        if (state.islands[idx] === island) avail.push(s.id);
+      }
+    }
+    if (!avail.includes(state.shipType)) avail.unshift(state.shipType); // yours is always stabled
+    return avail;
+  }
+
+  const hangarOverlay = document.getElementById('hangar-overlay');
+  const hangarClose   = document.getElementById('hangar-close');
+  const hangarGrid    = document.getElementById('hangar-grid');
+
+  const hangarCanvases = [];   // {id, ctx, W, H}
+  function buildHangarGrid(island) {
+    hangarGrid.innerHTML = '';
+    hangarCanvases.length = 0;
+    const dpr = window.devicePixelRatio || 1;
+    const avail = shipsAvailableAt(island);
+    for (const s of SHIPS) {
+      if (!avail.includes(s.id)) continue;
+      const card = document.createElement('div');
+      card.className = 'hangar-card' + (s.id === state.shipType ? ' selected' : '');
+      card.dataset.shipId = s.id;
+      const tag = s.id === state.shipType ? '<span class="hc-tag">Current</span>' : '';
+      card.innerHTML = `<div class="hc-name">${s.name}</div><canvas></canvas>${tag}`;
+      hangarGrid.appendChild(card);
+      const canvas = card.querySelector('canvas');
+      const W = 180, H = 120;
+      canvas.width = W * dpr; canvas.height = H * dpr;
+      const cctx = canvas.getContext('2d');
+      cctx.scale(dpr, dpr);
+      hangarCanvases.push({ id: s.id, ctx: cctx, W, H });
+
+      card.addEventListener('click', () => {
+        state.shipType = s.id;
+        saveState();
+        buildHangarGrid(island);      // refresh selection state
+        window.__DBG?.push('info', `mount → ${s.id}`);
+      });
+    }
+  }
+
+  let hangarRafId = null;
+  function renderHangarFrame(tMs) {
+    const t = tMs * 0.001;
+    for (const c of hangarCanvases) {
+      const { ctx: hctx, W, H } = c;
+      // Sky
+      const g = hctx.createLinearGradient(0, 0, 0, H);
+      g.addColorStop(0, '#aac3da'); g.addColorStop(1, '#d4dde5');
+      hctx.fillStyle = g;
+      hctx.fillRect(0, 0, W, H);
+      // Center the ship at game scale, gentle bob, "sailing"
+      hctx.save();
+      hctx.translate(W / 2, H / 2 + Math.sin(t * 1.2) * 1.6);
+      (SHIP_DRAWERS[c.id] || SHIP_DRAWERS.sloop)(hctx, t, 0.8);
+      hctx.restore();
+    }
+    hangarRafId = requestAnimationFrame(renderHangarFrame);
+  }
+
+  function openHangar(island) {
+    // Seeing a stable teaches you what mounts exist here — the collection.
+    let learned = false;
+    for (const id of shipsAvailableAt(island)) {
+      if (!state.mountsSeen.includes(id)) { state.mountsSeen.push(id); learned = true; }
+    }
+    if (learned) saveState();
+    buildHangarGrid(island);
+    hangarOverlay.classList.add('open');
+    hangarOverlay.setAttribute('aria-hidden', 'false');
+    if (hangarRafId == null) hangarRafId = requestAnimationFrame(renderHangarFrame);
+  }
+  function closeHangar() {
+    hangarOverlay.classList.remove('open');
+    hangarOverlay.setAttribute('aria-hidden', 'true');
+    if (hangarRafId != null) { cancelAnimationFrame(hangarRafId); hangarRafId = null; }
+  }
+
+  if (hangarClose) hangarClose.addEventListener('click', closeHangar);
+  if (hangarOverlay) {
+    hangarOverlay.addEventListener('click', (e) => {
+      if (e.target === hangarOverlay) closeHangar();
+    });
+  }
+
+  // ----- Landing: dock at an island, go ashore into its 3D village -----
+  // Each island hosts a procedural village (the "tethered village" diorama).
+  // Everything about it derives from a per-island seed, so revisits land on
+  // the same village without saving anything extra.
+  const landBtn         = document.getElementById('land-btn');
+  const villageOverlay  = document.getElementById('village-overlay');
+  const villageStage    = document.getElementById('village-stage');
+  const villageNameEl   = document.getElementById('village-name');
+  const villageStatusEl = document.getElementById('village-status');
+  const villageLeaveBtn = document.getElementById('village-leave');
+
+  let landTargetIsland = null;
+  let villageView = null;
+  let villageOpen = false;
+
+  function setLandTarget(island) {
+    if (island === landTargetIsland) return;
+    landTargetIsland = island;
+    landBtn.classList.toggle('show', !!island);
+  }
+
+  // Mix the voyage seed with the island's stable saved fields (x, y, shape
+  // survive in every save) so the village is deterministic per island.
+  function villageSeedFor(island) {
+    let h = state.seed >>> 0;
+    h = (h ^ Math.imul(island.shape + 1, 0x9E3779B9)) >>> 0;
+    h = (h ^ Math.imul(Math.round(island.x) + 7, 0x85EBCA6B)) >>> 0;
+    h = (h ^ Math.imul(Math.round(island.y) + 13, 0xC2B2AE35)) >>> 0;
+    return h;
+  }
+
+  // Bigger islands host bigger villages. Radius spans 28–50 → 3–9 buildings.
+  function villageBuildingCount(island) {
+    const t = Math.max(0, Math.min(1, (island.radius - 28) / 22));
+    return 3 + Math.round(t * 6);
+  }
+
+  // The village view is an ES module (three.js) loaded on first landing, so
+  // the base game keeps working where dynamic import can't (e.g. file://) —
+  // landing degrades to a note instead of taking the map down with it.
+  let villageModulePromise = null;
+  let villageLoader = () => {
+    if (!villageModulePromise) villageModulePromise = import('./village/village-view.js');
+    return villageModulePromise;
+  };
+
+  // ----- Rumors: the first real thing to do ashore -----
+  // Ask at a village's Noodle House and a sailor points out the nearest
+  // isle you haven't found: the fog parts over it on the map. Once per
+  // island per voyage (tracked in the save as `rumors`); discovering the
+  // isle — its name, the log count — still takes sailing there.
+  function rumorKey(island) {
+    return `${state.layer}:${Math.round(island.x)},${Math.round(island.y)}`;
+  }
+
+  // Rumors whose isle you haven't found yet, on the current layer — these
+  // carry an ✕ marker on the map and the chart until discovery.
+  function activeRumorMarkers() {
+    const out = [];
+    for (const r of state.rumors) {
+      if (r.layer !== state.layer) continue;
+      const isle = islandAt(r.x, r.y, 4);
+      if (isle && isle.discovered) continue;
+      out.push(r);
+    }
+    return out;
+  }
+
+  // How sailors describe an isle whose name marks it out — keyed by the
+  // modifier vocabulary (see MODIFIER_TOKENS / islands.js art).
+  const RUMOR_FLAVOR = {
+    asha: 'fire-scarred', glen: 'mine-riddled', helm: 'war-bannered',
+    hollow: 'overgrown', crag: 'craggy', tide: 'tide-washed',
+    keep: 'castle-crowned', spire: 'spire-topped', wing: 'winged',
+    sol: 'sun-haloed', wyn: 'wyvern-haunted', pyre: 'wyvern-haunted',
+  };
+
+  // Half of all rumors point at a special isle (one whose name modifiers
+  // give it distinct art) when any remain unfound. Deterministic per
+  // voyage and ask-order, like everything else in the world; the seam is
+  // overridable so tests can force either branch.
+  let rumorRoll = () =>
+    rng((state.seed ^ Math.imul(state.rumors.length + 1, 0x9E3779B9)) >>> 0)() < 0.5;
+
+  // Pick an unfound isle near `from`, push a chart marker for it, part the
+  // fog over it. Shared by rumors and delivery rewards. Returns the marker
+  // entry (with a human `what` description) or null if the layer is fully
+  // charted. Caller saves.
+  function markUnfoundIsle(from, { atKey, preferSpecial }) {
+    const unfound = state.islands.filter(i => !i.discovered && i !== from);
+    if (!unfound.length) return null;
+    const specials = unfound.filter(i => (i.modifiers || []).length > 0);
+    const useSpecial = preferSpecial && specials.length > 0;
+    const pool = useSpecial ? specials : unfound;
+
+    let best = null, bestD = Infinity;
+    for (const i of pool) {
+      const d = Math.hypot(i.x - from.x, i.y - from.y);
+      if (d < bestD) { bestD = d; best = i; }
+    }
+    const flavor = useSpecial ? (RUMOR_FLAVOR[best.modifiers[0]] || 'strange') : null;
+    const dir = compassDir(Math.atan2(best.y - from.y, best.x - from.x)).split(' ')[0];
+    const entry = {
+      at: atKey,
+      layer: state.layer,
+      x: Math.round(best.x),
+      y: Math.round(best.y),
+      dir,
+      dist: Math.round(bestD),
+      ...(flavor ? { flavor } : {}),
+    };
+    state.rumors.push(entry);
+    // Part the fog over the isle (a little wider than one stamp so the
+    // whole blob shows through when you get there).
+    stampReveal(best.x, best.y);
+    stampReveal(best.x - REVEAL_RADIUS * 0.55, best.y);
+    stampReveal(best.x + REVEAL_RADIUS * 0.55, best.y);
+    return { ...entry, what: flavor ? `a ${flavor} isle` : 'an isle' };
+  }
+
+  function askRumorAt(island) {
+    const spent = state.rumors.find(r => r.at === rumorKey(island));
+    if (spent) {
+      // The tale doesn't change — repeat it so the lead is never lost.
+      const what = spent.flavor ? `${spent.flavor} isle` : 'isle';
+      return {
+        ok: false,
+        message: `The cook shrugs — same tale as before: a ${what} to the ${spent.dir}, some ${spent.dist} lg out. The ✕ still marks it on your chart.`,
+      };
+    }
+    const mark = markUnfoundIsle(island, { atKey: rumorKey(island), preferSpecial: rumorRoll() });
+    if (!mark) {
+      return { ok: false, message: 'Every isle at this altitude is already on your chart.' };
+    }
+    saveState();
+    window.__DBG?.push('info', `rumor at ${island.name}: marked ${mark.flavor || 'plain'} isle near (${mark.x}, ${mark.y})`);
+    return {
+      ok: true,
+      message: `Over noodles, a sailor swears there’s ${mark.what} to the ${mark.dir}, some ${mark.dist} lg out. An ✕ marks it on your map and chart.`,
+    };
+  }
+
+  // ----- Trading: barter between altitudes, no coin -----
+  // Every island produces something (its layer's staple, or a rarer good if
+  // its name marks it) and wants a staple from a different altitude. Carry
+  // goods in the hold — no capacity, no prices — and grateful villages pay
+  // in knowledge: they mark an unfound isle on your chart.
+  const LAYER_GOODS = ['glacier ice', 'skywheat', 'salt fish']; // by layer index
+  const MODIFIER_GOODS = { glen: 'iron ore', hollow: 'wild berries', asha: 'ashglass', tide: 'pearls' };
+
+  function islandGoods(island) {
+    const special = (island.modifiers || []).find(m => MODIFIER_GOODS[m]);
+    const produce = special ? MODIFIER_GOODS[special] : LAYER_GOODS[state.layer];
+    const others = [0, 1, 2].filter(l => l !== state.layer);
+    const wantLayer = others[villageSeedFor(island) % 2];
+    return { produce, want: LAYER_GOODS[wantLayer], wantFrom: LAYER_NAMES[wantLayer] };
+  }
+
+  function takeGoodAt(island) {
+    const { produce } = islandGoods(island);
+    if (state.hold.includes(produce)) {
+      return { ok: false, message: `You already carry ${produce}. No hurry — the hold is roomy.` };
+    }
+    state.hold.push(produce);
+    saveState();
+    return { ok: true, message: `The workshop loads ${produce} aboard. Someone at another altitude will be glad of it.` };
+  }
+
+  function deliverGoodAt(island) {
+    const key = rumorKey(island);
+    const { want, wantFrom } = islandGoods(island);
+    if (state.delivered.includes(key)) {
+      return { ok: false, message: 'Their storeroom is still stocked from your last delivery.' };
+    }
+    const idx = state.hold.indexOf(want);
+    if (idx < 0) {
+      return { ok: false, message: `They’re hoping for ${want} from the ${wantFrom}.` };
+    }
+    state.hold.splice(idx, 1);
+    state.delivered.push(key);
+    const mark = markUnfoundIsle(island, { atKey: 'delivery:' + key, preferSpecial: true });
+    saveState();
+    window.__DBG?.push('info', `delivered ${want} at ${island.name} (${state.delivered.length} total)`);
+    return {
+      ok: true,
+      message: `${want[0].toUpperCase() + want.slice(1)}, at last! ` + (mark
+        ? `In thanks they mark ${mark.what} to the ${mark.dir} on your chart.`
+        : 'The whole village turns out to thank you.'),
+    };
+  }
+
+  async function openVillage(island) {
+    if (villageOpen || !island) return;
+    villageOpen = true;
+    villageNameEl.textContent = island.name;
+    villageStatusEl.textContent = 'Going ashore…';
+    villageStatusEl.style.display = 'block';
+    villageOverlay.classList.add('open');
+    villageOverlay.setAttribute('aria-hidden', 'false');
+    try {
+      const mod = await villageLoader();
+      if (!villageOpen) return; // left before the boats reached shore
+      villageView = mod.createVillageView({
+        root: villageStage,
+        seed: villageSeedFor(island),
+        count: villageBuildingCount(island),
+        // The island's identity shapes its village: name modifiers pick the
+        // terrain/props theme, the altitude layer tints the whole palette.
+        character: { modifiers: island.modifiers || [], layer: state.layer },
+        // Building roles — the game lives in these cards now: gossip at the
+        // Noodle House, barter at the Workshop, mounts at the Skywright's.
+        actionFor: (kind) => {
+          if (kind === 'mushroom') return { id: 'rumor', label: 'Ask for rumors' };
+          if (kind === 'tent') return { id: 'hangar', label: 'Visit the skywright' };
+          if (kind === 'cottage') {
+            const goods = islandGoods(island);
+            const actions = [];
+            if (state.hold.includes(goods.want) && !state.delivered.includes(rumorKey(island))) {
+              actions.push({ id: 'deliver', label: `Deliver ${goods.want}` });
+            }
+            if (!state.hold.includes(goods.produce)) {
+              actions.push({ id: 'take', label: `Take on ${goods.produce}` });
+            }
+            return actions;
+          }
+          return null;
+        },
+        onAction: (kind, id) => {
+          if (id === 'rumor') return askRumorAt(island);
+          if (id === 'take') return takeGoodAt(island);
+          if (id === 'deliver') return deliverGoodAt(island);
+          if (id === 'hangar') { openHangar(island); return null; }
+          return null;
+        },
+        infoFor: (kind) => {
+          if (kind === 'cottage') {
+            const goods = islandGoods(island);
+            return `They trade ${goods.produce} here, and hope for ${goods.want} from the ${goods.wantFrom}.`;
+          }
+          if (kind === 'tent') return 'Mounts stabled and swapped. What’s here varies by isle and altitude.';
+          if (kind === 'mushroom') return 'Hot broth and hotter gossip.';
+          return null;
+        },
+      });
+      // Match the overlay to the village's themed sky (dusk isles land at dusk).
+      if (villageView.skyColor) villageOverlay.style.background = villageView.skyColor;
+      villageStatusEl.style.display = 'none';
+      window.__DBG?.push('info', `ashore at ${island.name} (village seed ${villageSeedFor(island)})`);
+    } catch (e) {
+      villageModulePromise = null; // allow retry — the failure may be transient
+      villageStatusEl.textContent = 'The landing boats won’t launch here — 3D view unavailable in this browser.';
+      window.__DBG?.push('err', 'village load failed: ' + (e.message || e));
+    }
+  }
+
+  function closeVillage() {
+    if (!villageOpen) return;
+    villageOpen = false;
+    if (villageView) { villageView.dispose(); villageView = null; }
+    villageStatusEl.style.display = 'none';
+    villageOverlay.style.background = '';
+    villageOverlay.classList.remove('open');
+    villageOverlay.setAttribute('aria-hidden', 'true');
+  }
+
+  landBtn.addEventListener('click', () => openVillage(landTargetIsland));
+  villageLeaveBtn.addEventListener('click', closeVillage);
 
   boot();
 })();
