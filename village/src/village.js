@@ -5,7 +5,7 @@ import * as THREE from "../vendor/three.module.js";
 import { mulberry32, range, shuffle } from "./rng.js";
 import { World, ISLAND_RADIUS, WATER_Y, RIVER_HALF_WIDTH } from "./world.js";
 import { BUILDERS, BUILDING_KINDS } from "./buildings.js";
-import { buildGrowth, rock, lilyPad, buildBridge, warBanner, mineAdit, treeMakerFor } from "./decor.js";
+import { buildGrowth, rock, lilyPad, buildBridge, warBanner, mineAdit, fishingPier, treeMakerFor } from "./decor.js";
 import { themeFor } from "./theme.js";
 
 const BUILD_RADIUS = 4.6; // buildings stay inside this ring
@@ -133,12 +133,14 @@ export class Village {
     scatter(Math.round(26 * mix.tufts), 0.5, 6.3, 0.8, 1.1, buildGrowthTuft);
   }
 
-  // Character props: a war banner flying near the heart of a helm isle,
-  // a mine adit worked into the outskirts of a glen isle.
+  // Character props: a war banner flying near the heart of a helm isle, a
+  // mine adit worked into the outskirts of a glen isle, fishing piers off
+  // the rim on the low layer (the sea is right below).
   _placeProps(rng) {
     const BUILDERS_BY_PROP = {
-      banner: { make: warBanner, rMin: 0.8, rMax: 3.2, buildMargin: 1.0, faceCenter: false },
-      mine: { make: mineAdit, rMin: 4.4, rMax: 5.9, buildMargin: 1.6, faceCenter: true },
+      banner: { make: warBanner, rMin: 0.8, rMax: 3.2, buildMargin: 1.0, face: "random" },
+      mine: { make: mineAdit, rMin: 4.4, rMax: 5.9, buildMargin: 1.6, face: "center" },
+      pier: { make: fishingPier, rMin: 6.35, rMax: 6.55, buildMargin: 1.2, face: "out" },
     };
     for (const prop of this.theme.props) {
       const spec = BUILDERS_BY_PROP[prop];
@@ -147,7 +149,8 @@ export class Village {
       if (!spot) continue;
       const item = spec.make(rng);
       item.position.set(spot.x, this.world.heightAt(spot.x, spot.z) - 0.02, spot.z);
-      if (spec.faceCenter) item.lookAt(0, item.position.y, 0);
+      if (spec.face === "center") item.lookAt(0, item.position.y, 0);
+      else if (spec.face === "out") item.lookAt(spot.x * 2, item.position.y, spot.z * 2);
       else item.rotation.y = rng() * Math.PI * 2;
       this.group.add(item);
     }

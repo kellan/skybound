@@ -248,6 +248,82 @@ export function glowShroom(rng) {
   return g;
 }
 
+export function palmTree(rng) {
+  // A leaning palm: stacked tapering trunk segments drifting sideways,
+  // topped with a fan of two-segment drooping fronds and a few coconuts.
+  const g = new THREE.Group();
+  const lean = rng() * Math.PI * 2;
+  const leanAmt = range(rng, 0.12, 0.3);
+  const segs = 5;
+  const segH = range(rng, 0.11, 0.14);
+  let x = 0, z = 0, y = 0;
+  for (let i = 0; i < segs; i++) {
+    const r0 = 0.05 - i * 0.006;
+    const seg = mesh(new THREE.CylinderGeometry(r0 - 0.005, r0, segH, 6), lambert("#a98a63"), x, y + segH / 2, z);
+    seg.rotation.set(Math.sin(lean) * leanAmt * 0.6, 0, -Math.cos(lean) * leanAmt * 0.6);
+    g.add(seg);
+    x += Math.cos(lean) * leanAmt * segH;
+    z += Math.sin(lean) * leanAmt * segH;
+    y += segH * 0.96;
+  }
+  const crown = new THREE.Group();
+  crown.position.set(x, y + 0.02, z);
+  const fronds = 6 + Math.floor(rng() * 3);
+  for (let i = 0; i < fronds; i++) {
+    const a = (i / fronds) * Math.PI * 2 + rng() * 0.3;
+    const frond = new THREE.Group();
+    const inner = mesh(new THREE.BoxGeometry(0.26, 0.015, 0.09), lambert(pick(rng, [PALETTE.leaf, PALETTE.leafDark]), { flatShading: true }), 0.12, 0, 0);
+    const outer = mesh(new THREE.BoxGeometry(0.22, 0.012, 0.06), inner.material, 0.32, -0.045, 0);
+    outer.rotation.z = -0.55; // tip droops
+    inner.rotation.z = 0.12;
+    frond.add(inner, outer);
+    frond.rotation.y = a;
+    frond.rotation.z = range(rng, -0.1, 0.1);
+    crown.add(frond);
+  }
+  for (let i = 0; i < 3; i++) {
+    const a = rng() * Math.PI * 2;
+    const nut = mesh(new THREE.SphereGeometry(0.032, 6, 5), lambert("#7a5c3a"), Math.cos(a) * 0.05, -0.03, Math.sin(a) * 0.05);
+    nut.castShadow = false;
+    crown.add(nut);
+  }
+  g.add(crown);
+  return g;
+}
+
+export function fishingPier(rng) {
+  // A couple of planks jutting off the island's rim with a tiny seated
+  // fisher, rod bent over the drop — line running down toward the ocean
+  // the whole world floats above. Built facing +z (caller aims it off-rim).
+  const g = new THREE.Group();
+  const plankMat = lambert(PALETTE.wood);
+  const len = range(rng, 0.7, 0.9);
+  for (const sx of [-0.09, 0.09]) {
+    g.add(mesh(new THREE.BoxGeometry(0.16, 0.03, len), plankMat, sx, 0.05, len / 2 - 0.15));
+  }
+  // Posts at the outboard end.
+  for (const sx of [-0.14, 0.14]) {
+    g.add(mesh(new THREE.CylinderGeometry(0.02, 0.02, 0.22, 6), lambert(PALETTE.woodDark), sx, -0.04, len - 0.2));
+  }
+  // The fisher: cone body, sphere head, sitting near the end.
+  const body = mesh(new THREE.ConeGeometry(0.075, 0.16, 7), lambert(pick(rng, ["#b56d4e", "#5f7d99", "#8a6d9c"]), { flatShading: true }), 0.02, 0.14, len - 0.32);
+  g.add(body);
+  const head = mesh(new THREE.SphereGeometry(0.045, 8, 6), lambert("#e8c9a0"), 0.02, 0.26, len - 0.32);
+  head.castShadow = false;
+  g.add(head);
+  // Rod: thin cylinder angled out over the edge, line hanging straight down.
+  const rod = mesh(new THREE.CylinderGeometry(0.006, 0.009, 0.5, 5), lambert("#6b4d31"), 0.06, 0.24, len - 0.14);
+  rod.rotation.x = 1.05; // tip out past the planks
+  g.add(rod);
+  const line = mesh(new THREE.CylinderGeometry(0.0025, 0.0025, 0.5, 4), lambert("#efe8da"), 0.06, 0.02, len + 0.09);
+  line.castShadow = false;
+  g.add(line);
+  // A bucket for the catch.
+  const bucket = mesh(new THREE.CylinderGeometry(0.045, 0.035, 0.07, 8), lambert("#8a8a80"), -0.09, 0.09, len - 0.42);
+  g.add(bucket);
+  return g;
+}
+
 // Tree mix per flora kind; each returns a make(rng) suited to the theme.
 // leafyRatio varies per island: how much of a temperate wood is round
 // broadleaf vs pine.
@@ -255,8 +331,10 @@ export function treeMakerFor(flora, leafyRatio = 0.55) {
   switch (flora) {
     case "alpine": // snowy pines with the odd bare snag, no leafy rounds
       return (rng) => (rng() < 0.75 ? snowPine(rng) : deadTree(rng, "#8a7d6a"));
-    case "dusk": // gnarled snags and glowing shrooms under a low sun
-      return (rng) => {
+    case "shore": // the low layer, close over the ocean: palms and broadleaf
+      return (rng) => (rng() < 0.7 ? palmTree(rng) : roundTree(rng));
+    case "dusk": // gnarled snags and glowing shrooms — parked, no layer uses
+      return (rng) => { // it since the Deeps became the shore (kept for the lab)
         const roll = rng();
         if (roll < 0.4) return deadTree(rng, "#5c5060");
         if (roll < 0.75) return glowShroom(rng);
