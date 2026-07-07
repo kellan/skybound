@@ -13,3 +13,8 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npm test
+      # Real-browser smoke of the landing flow — the WebGL half the JSDOM
+      # suite can't reach. Chromium comes from Playwright's own install here;
+      # the Claude sandbox uses its preinstalled build (see test/browser/).
+      - run: npx playwright install --with-deps chromium
+      - run: npm run test:browser

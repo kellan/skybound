@@ -302,6 +302,68 @@
     font-style: italic; opacity: 0.78; font-size: 13px;
   }
 
+  /* ===== Landing (3D village) ===== */
+  #land-btn {
+    display: none;
+    margin: 0 auto 10px;
+    pointer-events: auto;
+    background: var(--parchment);
+    border: 1px solid var(--ink);
+    border-radius: 2px;
+    padding: 10px 26px;
+    font-family: inherit;
+    font-size: 12px;
+    font-weight: 700;
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+    color: var(--ink);
+    box-shadow: 0 3px 0 rgba(0,0,0,0.3);
+    cursor: pointer;
+  }
+  #land-btn.show { display: block; }
+  #land-btn:active { transform: translateY(1px); box-shadow: 0 2px 0 rgba(0,0,0,0.3); }
+  #village-overlay {
+    position: fixed; inset: 0;
+    display: none;
+    z-index: 45;
+    background: #f2e8d3; /* village PALETTE.sky */
+  }
+  #village-overlay.open { display: block; }
+  #village-stage { position: absolute; inset: 0; }
+  #village-topbar {
+    position: absolute; top: 0; left: 0; right: 0;
+    padding: env(safe-area-inset-top, 12px) 14px 10px;
+    display: flex; justify-content: space-between; align-items: flex-start;
+    pointer-events: none;
+    z-index: 5;
+  }
+  #village-topbar .badge { pointer-events: auto; }
+  #village-leave {
+    pointer-events: auto;
+    background: var(--ink);
+    color: var(--parchment-light);
+    border: none;
+    border-radius: 1px;
+    padding: 10px 18px;
+    font-family: inherit;
+    font-size: 11px;
+    letter-spacing: 0.15em;
+    text-transform: uppercase;
+    cursor: pointer;
+    box-shadow: 0 2px 0 rgba(0,0,0,0.25);
+  }
+  #village-leave:active { transform: translateY(1px); }
+  #village-status {
+    position: absolute; top: 50%; left: 50%;
+    transform: translate(-50%, -50%);
+    display: none;
+    font-style: italic;
+    color: var(--ink-soft);
+    font-size: 14px;
+    text-align: center;
+    max-width: 280px;
+  }
+
   /* ===== Debug system ===== */
   #debug-panel {
     position: absolute;
@@ -552,6 +614,7 @@
     </div>
 
     <div id="bottom-bar">
+      <button id="land-btn">⚓ Land</button>
       <div id="status-card">
         <div class="row">
           <span class="label">Heading</span>
@@ -571,6 +634,16 @@
           <span class="value" id="distance-val">—</span>
         </div>
       </div>
+    </div>
+
+    <!-- Landing overlay: the 3D village you walk when docked -->
+    <div id="village-overlay" aria-hidden="true">
+      <div id="village-stage"></div>
+      <div id="village-topbar">
+        <div class="badge">Ashore at<strong id="village-name">—</strong></div>
+        <button id="village-leave">Set Sail</button>
+      </div>
+      <div id="village-status"></div>
     </div>
 
     <!-- Altitude controls (ascend / altimeter / descend) -->
@@ -2139,10 +2212,12 @@
       const d = Math.hypot(state.target.x - state.ship.x, state.target.y - state.ship.y);
       destEl.textContent = state.target.name || 'Open sky';
       distEl.textContent = Math.round(d) + ' lg';
+      setLandTarget(null);
     } else {
       const dockedAt = islandAt(state.ship.x, state.ship.y, DOCK_PAD);
       destEl.textContent = dockedAt ? `Docked at ${dockedAt.name}` : 'Adrift';
       distEl.textContent = '—';
+      setLandTarget(state.transition ? null : dockedAt);
     }
     const disc = state.islands.filter(i => i.discovered).length;
     countEl.textContent = `${disc} / ${state.islands.length} isles`;
@@ -2157,6 +2232,14 @@
   let lastDt = 0;
   function loop(now) {
     frameCount++;
+    // While ashore the 3D village owns the screen; don't burn battery
+    // simulating and painting a map nobody can see. The ship is docked, so
+    // nothing on the map needs to advance.
+    if (villageOpen) {
+      lastT = now;
+      requestAnimationFrame(loop);
+      return;
+    }
     try {
       let dt = (now - lastT) / 1000;
       if (dt > 0.1) dt = 0.1;
@@ -2257,6 +2340,10 @@
           setTarget(x, y, name = null) { state.target = { x, y, name }; },
           clearTarget() { state.target = null; },
           ascend, descend, beginTransition,
+          openVillage, closeVillage, villageSeedFor, villageBuildingCount,
+          setVillageLoader(fn) { villageLoader = fn; },
+          get villageOpen() { return villageOpen; },
+          get villageView() { return villageView; },
           get saveKey() { return SAVE_KEY; },
           constants: {
             WORLD, ISLAND_COUNT, MIN_ISLAND_DIST,
@@ -2450,6 +2537,95 @@
       });
     }
   })();
+
+  // ----- Landing: dock at an island, go ashore into its 3D village -----
+  // Each island hosts a procedural village (the "tethered village" diorama).
+  // Everything about it derives from a per-island seed, so revisits land on
+  // the same village without saving anything extra.
+  const landBtn         = document.getElementById('land-btn');
+  const villageOverlay  = document.getElementById('village-overlay');
+  const villageStage    = document.getElementById('village-stage');
+  const villageNameEl   = document.getElementById('village-name');
+  const villageStatusEl = document.getElementById('village-status');
+  const villageLeaveBtn = document.getElementById('village-leave');
+
+  let landTargetIsland = null;
+  let villageView = null;
+  let villageOpen = false;
+
+  function setLandTarget(island) {
+    if (island === landTargetIsland) return;
+    landTargetIsland = island;
+    landBtn.classList.toggle('show', !!island);
+  }
+
+  // Mix the voyage seed with the island's stable saved fields (x, y, shape
+  // survive in every save) so the village is deterministic per island.
+  function villageSeedFor(island) {
+    let h = state.seed >>> 0;
+    h = (h ^ Math.imul(island.shape + 1, 0x9E3779B9)) >>> 0;
+    h = (h ^ Math.imul(Math.round(island.x) + 7, 0x85EBCA6B)) >>> 0;
+    h = (h ^ Math.imul(Math.round(island.y) + 13, 0xC2B2AE35)) >>> 0;
+    return h;
+  }
+
+  // Bigger islands host bigger villages. Radius spans 28–50 → 3–9 buildings.
+  function villageBuildingCount(island) {
+    const t = Math.max(0, Math.min(1, (island.radius - 28) / 22));
+    return 3 + Math.round(t * 6);
+  }
+
+  // The village view is an ES module (three.js) loaded on first landing, so
+  // the base game keeps working where dynamic import can't (e.g. file://) —
+  // landing degrades to a note instead of taking the map down with it.
+  let villageModulePromise = null;
+  let villageLoader = () => {
+    if (!villageModulePromise) villageModulePromise = import('./village/village-view.js');
+    return villageModulePromise;
+  };
+
+  async function openVillage(island) {
+    if (villageOpen || !island) return;
+    villageOpen = true;
+    villageNameEl.textContent = island.name;
+    villageStatusEl.textContent = 'Going ashore…';
+    villageStatusEl.style.display = 'block';
+    villageOverlay.classList.add('open');
+    villageOverlay.setAttribute('aria-hidden', 'false');
+    try {
+      const mod = await villageLoader();
+      if (!villageOpen) return; // left before the boats reached shore
+      villageView = mod.createVillageView({
+        root: villageStage,
+        seed: villageSeedFor(island),
+        count: villageBuildingCount(island),
+        // The island's identity shapes its village: name modifiers pick the
+        // terrain/props theme, the altitude layer tints the whole palette.
+        character: { modifiers: island.modifiers || [], layer: state.layer },
+      });
+      // Match the overlay to the village's themed sky (dusk isles land at dusk).
+      if (villageView.skyColor) villageOverlay.style.background = villageView.skyColor;
+      villageStatusEl.style.display = 'none';
+      window.__DBG?.push('info', `ashore at ${island.name} (village seed ${villageSeedFor(island)})`);
+    } catch (e) {
+      villageModulePromise = null; // allow retry — the failure may be transient
+      villageStatusEl.textContent = 'The landing boats won’t launch here — 3D view unavailable in this browser.';
+      window.__DBG?.push('err', 'village load failed: ' + (e.message || e));
+    }
+  }
+
+  function closeVillage() {
+    if (!villageOpen) return;
+    villageOpen = false;
+    if (villageView) { villageView.dispose(); villageView = null; }
+    villageStatusEl.style.display = 'none';
+    villageOverlay.style.background = '';
+    villageOverlay.classList.remove('open');
+    villageOverlay.setAttribute('aria-hidden', 'true');
+  }
+
+  landBtn.addEventListener('click', () => openVillage(landTargetIsland));
+  villageLeaveBtn.addEventListener('click', closeVillage);
 
   boot();
 })();
