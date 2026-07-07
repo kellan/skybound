@@ -18,7 +18,7 @@ const KIND_NAMES = {
   cottage: "Workshop",
   hut: "The Inn",
   strawberryHouse: "Strawberry Cottage",
-  tent: "Vineyard Tent",
+  tent: "Skywright's Tent",
 };
 
 const ICON_CHOICES = [
@@ -82,9 +82,8 @@ const CSS = `
 .vv-card .vv-card-name { font-size: 15px; font-weight: 700; color: ${UI.ink}; margin-top: 2px; }
 .vv-card .vv-card-hint { font-size: 11px; font-style: italic; color: ${UI.inkSoft}; margin-top: 4px; line-height: 1.45; }
 .vv-card { max-width: 240px; }
-.vv-card .vv-card-action {
-  display: none;
-  margin: 8px auto 0;
+.vv-card .vv-card-actions { display: flex; flex-direction: column; gap: 6px; margin-top: 8px; }
+.vv-card .vv-card-actions button {
   padding: 7px 16px;
   background: ${UI.ink};
   color: ${UI.paper};
@@ -95,7 +94,7 @@ const CSS = `
   letter-spacing: 0.06em;
   cursor: pointer;
 }
-.vv-card .vv-card-action:active { transform: translateY(1px); }
+.vv-card .vv-card-actions button:active { transform: translateY(1px); }
 `;
 
 function ensureStyles(doc) {
@@ -118,11 +117,14 @@ function ensureStyles(doc) {
 export function createVillageView({
   root, seed = 1, count = 6, character = {},
   cardHint = "game panel coming soon",
-  // Game hooks: actionFor(kind) -> {label} | null puts a button on the
-  // building card; onAction(kind, building) runs it and may return
-  // {message} (or a string) to show on the card.
+  // Game hooks: actionFor(kind) -> action | action[] | null puts buttons on
+  // the building card (action = {id, label}); onAction(kind, id, building)
+  // runs one and may return {message} (or a string) to show on the card —
+  // buttons then rebuild from actionFor, since an action can change what's
+  // offered. infoFor(kind) -> string overrides the card hint per building.
   actionFor = () => null,
   onAction = () => null,
+  infoFor = () => null,
 }) {
   const doc = root.ownerDocument;
   const win = doc.defaultView;
@@ -139,26 +141,35 @@ export function createVillageView({
   card.className = "vv-card";
   card.innerHTML =
     '<div class="vv-card-icon"></div><div class="vv-card-name"></div>' +
-    '<div class="vv-card-hint"></div><button class="vv-card-action"></button>';
+    '<div class="vv-card-hint"></div><div class="vv-card-actions"></div>';
   card.querySelector(".vv-card-hint").textContent = cardHint;
   const cardIcon = card.querySelector(".vv-card-icon");
   const cardName = card.querySelector(".vv-card-name");
   const cardHintEl = card.querySelector(".vv-card-hint");
-  const cardActionBtn = card.querySelector(".vv-card-action");
+  const cardActionsEl = card.querySelector(".vv-card-actions");
   root.append(mount, labelsContainer, picker, card);
 
-  cardActionBtn.addEventListener("click", (e) => {
-    e.stopPropagation();
+  function rebuildActions() {
+    cardActionsEl.innerHTML = "";
     if (!selected) return;
-    const result = onAction(selected.userData.kind, selected);
-    const message = typeof result === "string" ? result : result && result.message;
-    if (message) {
-      cardHintEl.textContent = message;
-      // One shot per visit to the card; reselecting re-offers the action.
-      cardActionBtn.style.display = "none";
-      placeCard();
+    const kind = selected.userData.kind;
+    let actions = actionFor(kind) || [];
+    if (!Array.isArray(actions)) actions = [actions];
+    for (const action of actions) {
+      const btn = doc.createElement("button");
+      btn.textContent = action.label;
+      btn.addEventListener("click", (e) => {
+        e.stopPropagation();
+        if (!selected) return;
+        const result = onAction(kind, action.id, selected);
+        const message = typeof result === "string" ? result : result && result.message;
+        if (message) cardHintEl.textContent = message;
+        rebuildActions(); // offers may have changed (goods taken, etc.)
+        placeCard();
+      });
+      cardActionsEl.appendChild(btn);
     }
-  });
+  }
 
   // --- Renderer / scene / camera ---
   const scene = new THREE.Scene();
@@ -317,14 +328,8 @@ export function createVillageView({
     building.scale.setScalar(1.07);
     cardIcon.textContent = building.userData.icon;
     cardName.textContent = KIND_NAMES[building.userData.kind] || building.userData.kind;
-    cardHintEl.textContent = cardHint;
-    const action = actionFor(building.userData.kind);
-    if (action) {
-      cardActionBtn.textContent = action.label;
-      cardActionBtn.style.display = "inline-block";
-    } else {
-      cardActionBtn.style.display = "none";
-    }
+    cardHintEl.textContent = infoFor(building.userData.kind) || cardHint;
+    rebuildActions();
     card.style.display = "block";
     lastCardPos = { x, y };
     placeCard();
