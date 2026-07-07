@@ -1091,7 +1091,10 @@
         parsed = migrateSave(parsed);
         if (!parsed.mapSize) parsed.mapSize = 'small';
         if (!parsed.shipType) parsed.shipType = 'cloudGalleon';
-        if (!Array.isArray(parsed.rumors)) parsed.rumors = [];
+        // Rumors are objects ({at, layer, x, y, dir, dist}); drop anything
+        // else (e.g. the short-lived string form from early v4 builds).
+        parsed.rumors = (Array.isArray(parsed.rumors) ? parsed.rumors : [])
+          .filter(r => r && typeof r === 'object' && typeof r.at === 'string');
         if (parsed.ship && parsed.ship.facingLeft == null) parsed.ship.facingLeft = false;
         if (parsed.layer == null) parsed.layer = DEFAULT_LAYER;
         if (!parsed.layers || !Array.isArray(parsed.layers) || parsed.layers.length !== LAYER_COUNT) {
@@ -1882,6 +1885,41 @@
     }
   }
 
+  // Rumored isles: an ✕ over the spot, drawn above fog like the target
+  // marker — you paid for the lead, the chart remembers it.
+  function drawRumorMarkers() {
+    const markers = activeRumorMarkers();
+    if (!markers.length) return;
+    const t = performance.now() * 0.001;
+    for (const r of markers) {
+      const sx = r.x - camera.x + viewW / 2;
+      const sy = r.y - camera.y + viewH / 2;
+      if (sx < -40 || sx > viewW + 40 || sy < -40 || sy > viewH + 40) continue;
+      ctx.save();
+      ctx.globalAlpha = 0.75 + Math.sin(t * 2.2) * 0.15;
+      ctx.lineCap = 'round';
+      const s = 7;
+      // Dark underlay so the ✕ reads over parted sky as well as fog.
+      ctx.strokeStyle = 'rgba(20, 16, 10, 0.55)';
+      ctx.lineWidth = 4.5;
+      ctx.beginPath();
+      ctx.moveTo(sx - s, sy - s); ctx.lineTo(sx + s, sy + s);
+      ctx.moveTo(sx + s, sy - s); ctx.lineTo(sx - s, sy + s);
+      ctx.stroke();
+      ctx.strokeStyle = '#e08050';
+      ctx.lineWidth = 2.4;
+      ctx.stroke();
+      // Slowly turning dashed ring, like a circled spot on a chart.
+      ctx.setLineDash([4, 4]);
+      ctx.lineDashOffset = -t * 6;
+      ctx.lineWidth = 1.3;
+      ctx.beginPath();
+      ctx.arc(sx, sy, 14, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.restore();
+    }
+  }
+
   function drawTargetMarker() {
     if (!state.target) return;
     const sx = state.target.x - camera.x + viewW / 2;
@@ -2000,6 +2038,26 @@
       if (tx + lw > miniW - 4) tx = x - 5 - lw;
       miniCtx.fillStyle = 'rgba(42, 36, 23, 0.85)';
       miniCtx.fillText(label, tx, ty);
+    }
+
+    // Rumored isles: a faint hollow dot (charted by hearsay, no name yet)
+    // circled by an ✕ until you actually find the place.
+    for (const r of activeRumorMarkers()) {
+      const x = wx(r.x), y = wy(r.y);
+      miniCtx.beginPath();
+      miniCtx.arc(x, y, 3, 0, Math.PI * 2);
+      miniCtx.fillStyle = 'rgba(58, 74, 46, 0.25)';
+      miniCtx.fill();
+      miniCtx.strokeStyle = 'rgba(42, 36, 23, 0.45)';
+      miniCtx.lineWidth = 0.8;
+      miniCtx.stroke();
+      miniCtx.strokeStyle = 'rgba(201, 98, 46, 0.9)';
+      miniCtx.lineWidth = 1.6;
+      miniCtx.lineCap = 'round';
+      miniCtx.beginPath();
+      miniCtx.moveTo(x - 6, y - 6); miniCtx.lineTo(x + 6, y + 6);
+      miniCtx.moveTo(x + 6, y - 6); miniCtx.lineTo(x - 6, y + 6);
+      miniCtx.stroke();
     }
 
     // Target marker
@@ -2133,6 +2191,9 @@
     // pointing toward each discovered island so the player can find their way
     // back. Closer islands ride higher on the alpha scale.
     drawEdgeLabels();
+
+    // Rumor markers on top of fog — chart knowledge, not line of sight
+    drawRumorMarkers();
 
     // Target marker on top of fog (so you can see it through fog faintly)
     drawTargetMarker();
@@ -2347,7 +2408,7 @@
           clearTarget() { state.target = null; },
           ascend, descend, beginTransition,
           openVillage, closeVillage, villageSeedFor, villageBuildingCount,
-          askRumorAt, rumorKey,
+          askRumorAt, rumorKey, activeRumorMarkers,
           setVillageLoader(fn) { villageLoader = fn; },
           get villageOpen() { return villageOpen; },
           get villageView() { return villageView; },
@@ -2601,9 +2662,27 @@
     return `${state.layer}:${Math.round(island.x)},${Math.round(island.y)}`;
   }
 
+  // Rumors whose isle you haven't found yet, on the current layer — these
+  // carry an ✕ marker on the map and the chart until discovery.
+  function activeRumorMarkers() {
+    const out = [];
+    for (const r of state.rumors) {
+      if (r.layer !== state.layer) continue;
+      const isle = islandAt(r.x, r.y, 4);
+      if (isle && isle.discovered) continue;
+      out.push(r);
+    }
+    return out;
+  }
+
   function askRumorAt(island) {
-    if (state.rumors.includes(rumorKey(island))) {
-      return { ok: false, message: 'No fresh gossip here — the pot’s been scraped. Try another port.' };
+    const spent = state.rumors.find(r => r.at === rumorKey(island));
+    if (spent) {
+      // The tale doesn't change — repeat it so the lead is never lost.
+      return {
+        ok: false,
+        message: `The cook shrugs — same tale as before: an isle to the ${spent.dir}, some ${spent.dist} lg out. The ✕ still marks it on your chart.`,
+      };
     }
     let best = null, bestD = Infinity;
     for (const i of state.islands) {
@@ -2614,18 +2693,25 @@
     if (!best) {
       return { ok: false, message: 'Every isle at this altitude is already on your chart.' };
     }
-    state.rumors.push(rumorKey(island));
+    const dir = compassDir(Math.atan2(best.y - island.y, best.x - island.x)).split(' ')[0];
+    state.rumors.push({
+      at: rumorKey(island),
+      layer: state.layer,
+      x: Math.round(best.x),
+      y: Math.round(best.y),
+      dir,
+      dist: Math.round(bestD),
+    });
     // Part the fog over the rumored isle (a little wider than one stamp so
-    // the whole blob shows through).
+    // the whole blob shows through when you get there).
     stampReveal(best.x, best.y);
     stampReveal(best.x - REVEAL_RADIUS * 0.55, best.y);
     stampReveal(best.x + REVEAL_RADIUS * 0.55, best.y);
     saveState();
-    const dir = compassDir(Math.atan2(best.y - island.y, best.x - island.x)).split(' ')[0];
-    window.__DBG?.push('info', `rumor at ${island.name}: fog parted near (${Math.round(best.x)}, ${Math.round(best.y)})`);
+    window.__DBG?.push('info', `rumor at ${island.name}: marked isle near (${Math.round(best.x)}, ${Math.round(best.y)})`);
     return {
       ok: true,
-      message: `Over noodles, a sailor swears there’s an isle to the ${dir}, some ${Math.round(bestD)} lg out. The fog has parted over it on your chart.`,
+      message: `Over noodles, a sailor swears there’s an isle to the ${dir}, some ${Math.round(bestD)} lg out. An ✕ marks it on your map and chart.`,
     };
   }
 
