@@ -248,6 +248,247 @@ export function glowShroom(rng) {
   return g;
 }
 
+export function palmTree(rng) {
+  // A leaning palm: stacked tapering trunk segments drifting sideways,
+  // topped with a fan of two-segment drooping fronds and a few coconuts.
+  const g = new THREE.Group();
+  const lean = rng() * Math.PI * 2;
+  const leanAmt = range(rng, 0.12, 0.3);
+  const segs = 5;
+  const segH = range(rng, 0.11, 0.14);
+  let x = 0, z = 0, y = 0;
+  for (let i = 0; i < segs; i++) {
+    const r0 = 0.05 - i * 0.006;
+    const seg = mesh(new THREE.CylinderGeometry(r0 - 0.005, r0, segH, 6), lambert("#a98a63"), x, y + segH / 2, z);
+    seg.rotation.set(Math.sin(lean) * leanAmt * 0.6, 0, -Math.cos(lean) * leanAmt * 0.6);
+    g.add(seg);
+    x += Math.cos(lean) * leanAmt * segH;
+    z += Math.sin(lean) * leanAmt * segH;
+    y += segH * 0.96;
+  }
+  const crown = new THREE.Group();
+  crown.position.set(x, y + 0.02, z);
+  const fronds = 6 + Math.floor(rng() * 3);
+  for (let i = 0; i < fronds; i++) {
+    const a = (i / fronds) * Math.PI * 2 + rng() * 0.3;
+    const frond = new THREE.Group();
+    const inner = mesh(new THREE.BoxGeometry(0.26, 0.015, 0.09), lambert(pick(rng, [PALETTE.leaf, PALETTE.leafDark]), { flatShading: true }), 0.12, 0, 0);
+    const outer = mesh(new THREE.BoxGeometry(0.22, 0.012, 0.06), inner.material, 0.32, -0.045, 0);
+    outer.rotation.z = -0.55; // tip droops
+    inner.rotation.z = 0.12;
+    frond.add(inner, outer);
+    frond.rotation.y = a;
+    frond.rotation.z = range(rng, -0.1, 0.1);
+    crown.add(frond);
+  }
+  for (let i = 0; i < 3; i++) {
+    const a = rng() * Math.PI * 2;
+    const nut = mesh(new THREE.SphereGeometry(0.032, 6, 5), lambert("#7a5c3a"), Math.cos(a) * 0.05, -0.03, Math.sin(a) * 0.05);
+    nut.castShadow = false;
+    crown.add(nut);
+  }
+  g.add(crown);
+  return g;
+}
+
+export function fishingPier(rng) {
+  // A couple of planks jutting off the island's rim with a tiny seated
+  // fisher, rod bent over the drop — line running down toward the ocean
+  // the whole world floats above. Built facing +z (caller aims it off-rim).
+  const g = new THREE.Group();
+  const plankMat = lambert(PALETTE.wood);
+  const len = range(rng, 0.7, 0.9);
+  for (const sx of [-0.09, 0.09]) {
+    g.add(mesh(new THREE.BoxGeometry(0.16, 0.03, len), plankMat, sx, 0.05, len / 2 - 0.15));
+  }
+  // Posts at the outboard end.
+  for (const sx of [-0.14, 0.14]) {
+    g.add(mesh(new THREE.CylinderGeometry(0.02, 0.02, 0.22, 6), lambert(PALETTE.woodDark), sx, -0.04, len - 0.2));
+  }
+  // The fisher: cone body, sphere head, sitting near the end.
+  const body = mesh(new THREE.ConeGeometry(0.075, 0.16, 7), lambert(pick(rng, ["#b56d4e", "#5f7d99", "#8a6d9c"]), { flatShading: true }), 0.02, 0.14, len - 0.32);
+  g.add(body);
+  const head = mesh(new THREE.SphereGeometry(0.045, 8, 6), lambert("#e8c9a0"), 0.02, 0.26, len - 0.32);
+  head.castShadow = false;
+  g.add(head);
+  // Rod: thin cylinder angled out over the edge, line hanging straight down.
+  const rod = mesh(new THREE.CylinderGeometry(0.006, 0.009, 0.5, 5), lambert("#6b4d31"), 0.06, 0.24, len - 0.14);
+  rod.rotation.x = 1.05; // tip out past the planks
+  g.add(rod);
+  const line = mesh(new THREE.CylinderGeometry(0.0025, 0.0025, 0.5, 4), lambert("#efe8da"), 0.06, 0.02, len + 0.09);
+  line.castShadow = false;
+  g.add(line);
+  // A bucket for the catch.
+  const bucket = mesh(new THREE.CylinderGeometry(0.045, 0.035, 0.07, 8), lambert("#8a8a80"), -0.09, 0.09, len - 0.42);
+  g.add(bucket);
+  return g;
+}
+
+// --- Special-name props: the still-flying and the long-built ---
+
+export function stoneKeep(rng) {
+  // A squat crenellated tower — the castle the isle is named for.
+  const g = new THREE.Group();
+  const stone = lambert("#a8a294", { flatShading: true });
+  const towerH = range(rng, 0.85, 1.05);
+  g.add(mesh(new THREE.CylinderGeometry(0.26, 0.32, towerH, 9), stone, 0, towerH / 2, 0));
+  // Crenellations: teeth around the parapet.
+  for (let i = 0; i < 7; i++) {
+    const a = (i / 7) * Math.PI * 2;
+    g.add(mesh(new THREE.BoxGeometry(0.09, 0.09, 0.07), stone, Math.cos(a) * 0.24, towerH + 0.04, Math.sin(a) * 0.24));
+  }
+  // Arrow-slit glow and a doorway.
+  const slit = mesh(new THREE.BoxGeometry(0.03, 0.12, 0.02), lambert(PALETTE.lantern, { emissive: 0xcc9933, emissiveIntensity: 0.6 }), 0, towerH * 0.62, 0.29);
+  slit.castShadow = false;
+  g.add(slit);
+  g.add(mesh(new THREE.BoxGeometry(0.14, 0.2, 0.05), lambert("#3a2f22"), 0, 0.1, 0.3));
+  // Pennant on a pole.
+  g.add(mesh(new THREE.CylinderGeometry(0.012, 0.012, 0.3, 5), lambert(PALETTE.woodDark), 0, towerH + 0.2, 0));
+  const pennant = mesh(new THREE.ConeGeometry(0.05, 0.16, 4), lambert(PALETTE.flag), 0.07, towerH + 0.28, 0);
+  pennant.rotation.z = -Math.PI / 2;
+  pennant.castShadow = false;
+  g.add(pennant);
+  return g;
+}
+
+export function watchtower(rng) {
+  // A tall wooden lookout with a beacon burning on the platform.
+  const g = new THREE.Group();
+  const legMat = lambert(PALETTE.woodDark);
+  const h = range(rng, 1.2, 1.4);
+  for (const [sx, sz] of [[-1, -1], [1, -1], [-1, 1], [1, 1]]) {
+    const leg = mesh(new THREE.CylinderGeometry(0.02, 0.03, h, 5), legMat, sx * 0.11, h / 2, sz * 0.11);
+    leg.rotation.x = -sz * 0.08;
+    leg.rotation.z = sx * 0.08;
+    g.add(leg);
+  }
+  g.add(mesh(new THREE.BoxGeometry(0.34, 0.04, 0.34), lambert(PALETTE.wood), 0, h, 0));
+  // Railings.
+  for (const [sx, sz] of [[0, -1], [0, 1], [-1, 0], [1, 0]]) {
+    g.add(mesh(new THREE.BoxGeometry(sz ? 0.34 : 0.02, 0.02, sz ? 0.02 : 0.34), legMat, sx * 0.16, h + 0.08, sz * 0.16));
+  }
+  // The beacon: a brazier glowing hot.
+  g.add(mesh(new THREE.CylinderGeometry(0.05, 0.04, 0.06, 7), lambert("#4a4038"), 0, h + 0.06, 0));
+  const flame = mesh(
+    new THREE.ConeGeometry(0.05, 0.14, 7),
+    lambert("#ffb347", { emissive: 0xff7722, emissiveIntensity: 1.1 }),
+    0, h + 0.16, 0
+  );
+  flame.castShadow = false;
+  g.add(flame);
+  // Little peaked roof on posts.
+  g.add(mesh(new THREE.ConeGeometry(0.26, 0.16, 4), lambert(PALETTE.cottageRoof, { flatShading: true }), 0, h + 0.34, 0));
+  return g;
+}
+
+export function sunShrine(rng) {
+  // A gilded sun-disc raised over a small stone cairn — the isle is
+  // sun-blessed, and the shrine keeps it that way.
+  const g = new THREE.Group();
+  for (let i = 0; i < 4; i++) {
+    const r = rock(rng);
+    r.scale.multiplyScalar(0.8);
+    r.position.set(range(rng, -0.12, 0.12), 0.01 + i * 0.045, range(rng, -0.12, 0.12));
+    g.add(r);
+  }
+  g.add(mesh(new THREE.CylinderGeometry(0.018, 0.024, 0.6, 6), lambert(PALETTE.woodDark), 0, 0.42, 0));
+  const gold = lambert("#f2c14e", { emissive: 0xd99a2b, emissiveIntensity: 0.55 });
+  const disc = mesh(new THREE.CylinderGeometry(0.16, 0.16, 0.025, 16), gold, 0, 0.82, 0);
+  disc.rotation.x = Math.PI / 2;
+  disc.castShadow = false;
+  g.add(disc);
+  for (let i = 0; i < 8; i++) {
+    const a = (i / 8) * Math.PI * 2;
+    const ray = mesh(new THREE.ConeGeometry(0.022, 0.09, 4), gold);
+    ray.position.set(Math.cos(a) * 0.21, 0.82 + Math.sin(a) * 0.21, 0);
+    ray.rotation.z = a - Math.PI / 2;
+    ray.castShadow = false;
+    g.add(ray);
+  }
+  return g;
+}
+
+export function giantFeathers(rng) {
+  // Enormous moulted feathers planted where they fell — something vast
+  // and winged passes over these isles.
+  const g = new THREE.Group();
+  const n = 2 + Math.floor(rng() * 2);
+  for (let i = 0; i < n; i++) {
+    const f = new THREE.Group();
+    const len = range(rng, 0.5, 0.8);
+    const vane = mesh(new THREE.SphereGeometry(0.5, 8, 6), lambert(i === 0 ? "#f4f1e6" : pick(rng, ["#f4f1e6", "#e8dcc8"]), { flatShading: true }));
+    vane.scale.set(0.12, len, 0.03);
+    vane.position.y = len * 0.55;
+    f.add(vane);
+    const quill = mesh(new THREE.CylinderGeometry(0.008, 0.014, len * 0.7, 5), lambert("#d8cdb4"), 0, len * 0.25, 0.02);
+    f.add(quill);
+    f.position.set(range(rng, -0.25, 0.25), 0, range(rng, -0.25, 0.25));
+    f.rotation.set(range(rng, -0.35, 0.35), rng() * Math.PI * 2, range(rng, -0.3, 0.3));
+    g.add(f);
+  }
+  return g;
+}
+
+export function wyvernNest(rng, scorched) {
+  // A ring of sticks (scorched on pyre isles) with eggs — the perch the
+  // circling wyvern comes home to.
+  const g = new THREE.Group();
+  const stickMat = lambert(scorched ? "#4e4238" : PALETTE.woodDark);
+  for (let i = 0; i < 10; i++) {
+    const a = (i / 10) * Math.PI * 2 + rng() * 0.3;
+    const stick = mesh(new THREE.CylinderGeometry(0.012, 0.018, range(rng, 0.22, 0.34), 5), stickMat,
+      Math.cos(a) * 0.16, 0.05, Math.sin(a) * 0.16);
+    stick.rotation.set(Math.sin(a) * 1.25, 0, Math.cos(a) * 1.25);
+    g.add(stick);
+  }
+  for (let i = 0; i < 2; i++) {
+    const egg = mesh(new THREE.SphereGeometry(0.055, 8, 6), lambert(scorched ? "#c9a06a" : "#e8e0cc"),
+      range(rng, -0.05, 0.05), 0.06, range(rng, -0.05, 0.05));
+    egg.scale.y = 1.25;
+    egg.castShadow = false;
+    g.add(egg);
+  }
+  if (scorched) {
+    // Char marks around the nest.
+    const scorch = mesh(new THREE.CylinderGeometry(0.3, 0.3, 0.005, 12), lambert("#3a322a"), 0, 0.002, 0);
+    scorch.castShadow = false;
+    g.add(scorch);
+  }
+  return g;
+}
+
+export function wyvern(rng, scorched) {
+  // A low-poly wyvern built facing +x; the view flies it in a slow circle
+  // over the village (wings and orbit animate — see village.flyers).
+  const g = new THREE.Group();
+  const hide = lambert(scorched ? "#8a4a3a" : "#5f7d6a", { flatShading: true });
+  const body = mesh(new THREE.ConeGeometry(0.09, 0.42, 7), hide);
+  body.rotation.z = -Math.PI / 2; // nose toward +x
+  g.add(body);
+  const head = mesh(new THREE.SphereGeometry(0.06, 7, 6), hide, 0.24, 0.02, 0);
+  g.add(head);
+  const snout = mesh(new THREE.ConeGeometry(0.035, 0.1, 6), hide, 0.32, 0.01, 0);
+  snout.rotation.z = -Math.PI / 2;
+  g.add(snout);
+  const tail = mesh(new THREE.ConeGeometry(0.035, 0.34, 6), hide, -0.32, 0.01, 0);
+  tail.rotation.z = Math.PI / 2;
+  g.add(tail);
+  const wings = [];
+  for (const side of [-1, 1]) {
+    const wing = new THREE.Group();
+    const membrane = mesh(new THREE.BoxGeometry(0.26, 0.015, 0.34), hide, 0, 0, side * 0.18);
+    wing.add(membrane);
+    const tip = mesh(new THREE.BoxGeometry(0.18, 0.012, 0.2), hide, 0.02, 0, side * 0.42);
+    tip.rotation.x = side * 0.25;
+    wing.add(tip);
+    wing.position.set(-0.02, 0.03, 0);
+    g.add(wing);
+    wings.push(wing);
+  }
+  g.userData.wings = wings;
+  return g;
+}
+
 // Tree mix per flora kind; each returns a make(rng) suited to the theme.
 // leafyRatio varies per island: how much of a temperate wood is round
 // broadleaf vs pine.
@@ -255,8 +496,10 @@ export function treeMakerFor(flora, leafyRatio = 0.55) {
   switch (flora) {
     case "alpine": // snowy pines with the odd bare snag, no leafy rounds
       return (rng) => (rng() < 0.75 ? snowPine(rng) : deadTree(rng, "#8a7d6a"));
-    case "dusk": // gnarled snags and glowing shrooms under a low sun
-      return (rng) => {
+    case "shore": // the low layer, close over the ocean: palms and broadleaf
+      return (rng) => (rng() < 0.7 ? palmTree(rng) : roundTree(rng));
+    case "dusk": // gnarled snags and glowing shrooms — parked, no layer uses
+      return (rng) => { // it since the Deeps became the shore (kept for the lab)
         const roll = rng();
         if (roll < 0.4) return deadTree(rng, "#5c5060");
         if (roll < 0.75) return glowShroom(rng);

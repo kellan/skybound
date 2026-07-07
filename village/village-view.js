@@ -18,7 +18,7 @@ const KIND_NAMES = {
   cottage: "Workshop",
   hut: "The Inn",
   strawberryHouse: "Strawberry Cottage",
-  tent: "Vineyard Tent",
+  tent: "Skywright's Tent",
 };
 
 const ICON_CHOICES = [
@@ -80,7 +80,21 @@ const CSS = `
 }
 .vv-card .vv-card-icon { font-size: 30px; line-height: 1.2; }
 .vv-card .vv-card-name { font-size: 15px; font-weight: 700; color: ${UI.ink}; margin-top: 2px; }
-.vv-card .vv-card-hint { font-size: 10px; font-style: italic; color: ${UI.inkSoft}; margin-top: 4px; }
+.vv-card .vv-card-hint { font-size: 11px; font-style: italic; color: ${UI.inkSoft}; margin-top: 4px; line-height: 1.45; }
+.vv-card { max-width: 240px; }
+.vv-card .vv-card-actions { display: flex; flex-direction: column; gap: 6px; margin-top: 8px; }
+.vv-card .vv-card-actions button {
+  padding: 7px 16px;
+  background: ${UI.ink};
+  color: ${UI.paper};
+  border: none;
+  border-radius: 8px;
+  font-family: inherit;
+  font-size: 12px;
+  letter-spacing: 0.06em;
+  cursor: pointer;
+}
+.vv-card .vv-card-actions button:active { transform: translateY(1px); }
 `;
 
 function ensureStyles(doc) {
@@ -100,7 +114,18 @@ function ensureStyles(doc) {
  *   setLabelsVisible(bool)              — toggle the floating icon bubbles
  *   dispose()                           — tear down GL context, DOM, listeners
  */
-export function createVillageView({ root, seed = 1, count = 6, character = {}, cardHint = "game panel coming soon" }) {
+export function createVillageView({
+  root, seed = 1, count = 6, character = {},
+  cardHint = "game panel coming soon",
+  // Game hooks: actionFor(kind) -> action | action[] | null puts buttons on
+  // the building card (action = {id, label}); onAction(kind, id, building)
+  // runs one and may return {message} (or a string) to show on the card —
+  // buttons then rebuild from actionFor, since an action can change what's
+  // offered. infoFor(kind) -> string overrides the card hint per building.
+  actionFor = () => null,
+  onAction = () => null,
+  infoFor = () => null,
+}) {
   const doc = root.ownerDocument;
   const win = doc.defaultView;
   ensureStyles(doc);
@@ -116,11 +141,35 @@ export function createVillageView({ root, seed = 1, count = 6, character = {}, c
   card.className = "vv-card";
   card.innerHTML =
     '<div class="vv-card-icon"></div><div class="vv-card-name"></div>' +
-    `<div class="vv-card-hint"></div>`;
+    '<div class="vv-card-hint"></div><div class="vv-card-actions"></div>';
   card.querySelector(".vv-card-hint").textContent = cardHint;
   const cardIcon = card.querySelector(".vv-card-icon");
   const cardName = card.querySelector(".vv-card-name");
+  const cardHintEl = card.querySelector(".vv-card-hint");
+  const cardActionsEl = card.querySelector(".vv-card-actions");
   root.append(mount, labelsContainer, picker, card);
+
+  function rebuildActions() {
+    cardActionsEl.innerHTML = "";
+    if (!selected) return;
+    const kind = selected.userData.kind;
+    let actions = actionFor(kind) || [];
+    if (!Array.isArray(actions)) actions = [actions];
+    for (const action of actions) {
+      const btn = doc.createElement("button");
+      btn.textContent = action.label;
+      btn.addEventListener("click", (e) => {
+        e.stopPropagation();
+        if (!selected) return;
+        const result = onAction(kind, action.id, selected);
+        const message = typeof result === "string" ? result : result && result.message;
+        if (message) cardHintEl.textContent = message;
+        rebuildActions(); // offers may have changed (goods taken, etc.)
+        placeCard();
+      });
+      cardActionsEl.appendChild(btn);
+    }
+  }
 
   // --- Renderer / scene / camera ---
   const scene = new THREE.Scene();
@@ -268,14 +317,22 @@ export function createVillageView({ root, seed = 1, count = 6, character = {}, c
     el.style.top = `${Math.max(8, y - rect.height - lift)}px`;
   }
 
+  let lastCardPos = null;
+  function placeCard() {
+    if (lastCardPos) placeOver(card, lastCardPos.x, lastCardPos.y, 18);
+  }
+
   function selectBuilding(building, x, y) {
     deselectBuilding();
     selected = building;
     building.scale.setScalar(1.07);
     cardIcon.textContent = building.userData.icon;
     cardName.textContent = KIND_NAMES[building.userData.kind] || building.userData.kind;
+    cardHintEl.textContent = infoFor(building.userData.kind) || cardHint;
+    rebuildActions();
     card.style.display = "block";
-    placeOver(card, x, y, 18);
+    lastCardPos = { x, y };
+    placeCard();
   }
 
   function deselectBuilding() {
@@ -412,11 +469,32 @@ export function createVillageView({ root, seed = 1, count = 6, character = {}, c
   const clock = new THREE.Clock();
   let rafId = null;
   let disposed = false;
+  // Flyers (wyverns): slow circle over the village, gentle bob, wing flap.
+  function updateFlyers(t) {
+    const flyers = state.village ? state.village.flyers : [];
+    for (const f of flyers) {
+      const a = t * f.speed + f.phase;
+      f.group.position.set(
+        Math.cos(a) * f.radius,
+        f.height + Math.sin(t * 0.7 + f.phase) * 0.35,
+        Math.sin(a) * f.radius
+      );
+      // Face along the direction of travel (tangent of the circle).
+      f.group.rotation.y = -a - Math.PI / 2;
+      f.group.rotation.z = 0.12; // slight bank into the turn
+      const wings = f.group.userData.wings || [];
+      const flap = Math.sin(t * 5.2 + f.phase) * 0.45;
+      if (wings[0]) wings[0].rotation.x = -flap;
+      if (wings[1]) wings[1].rotation.x = flap;
+    }
+  }
+
   function loop() {
     if (disposed) return;
     const t = clock.getElapsedTime();
     updateLabels(t);
     updateSmoke(t);
+    updateFlyers(t);
     controls.update();
     renderer.render(scene, camera);
     rafId = win.requestAnimationFrame(loop);

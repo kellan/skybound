@@ -82,15 +82,22 @@ const SCATTER_TWEAKS = {
 };
 
 // Extra props per modifier (additive, order = placement priority).
-const PROPS = { helm: "banner", glen: "mine" };
+// wyn/pyre share the wyvern (nest on the ground, the beast circling above);
+// pyre's runs scorched.
+const PROPS = {
+  helm: "banner", glen: "mine", keep: "keep", spire: "watch",
+  sol: "shrine", wing: "feathers", wyn: "wyvern", pyre: "wyvern",
+};
 
 // Altitude layers change the weather, not just the paint: each has its own
 // palette wash AND its own light — sun color/angle, ambient, fog depth.
-// Layer 1 (Cloud Sea) is the baseline warm afternoon.
+// The story's world floats above an endless ocean: climbing gets colder and
+// clearer, descending gets warmer and more maritime. Layer 1 (Cloud Sea) is
+// the baseline warm afternoon.
 const LAYER_TINTS = [
   { tint: "#f4f8f6", t: 0.55, sky: "#e9f1ee", water: "#a9cfd8" }, // 0 — High Reaches: thin pale alpine air
   null,                                                            // 1 — Cloud Sea
-  { tint: "#3f3346", t: 0.42, sky: "#c99e72", water: "#4f6a78" }, // 2 — Hollow Deeps: amber dusk
+  { tint: "#f4ecca", t: 0.28, sky: "#dcefe6", water: "#5fc0cf" }, // 2 — Hollow Deeps: sun-bleached shore over the ocean
 ];
 
 export const LAYER_LIGHT = [
@@ -104,10 +111,10 @@ export const LAYER_LIGHT = [
     hemiSky: 0xfff2d8, hemiGround: 0xb8a878, hemiIntensity: 0.85,
     fogNear: 18, fogFar: 40,
   },
-  { // Hollow Deeps: low ember sun, dusk ambient, close fog
-    sunColor: 0xff9655, sunIntensity: 1.35, sunPosition: [7.5, 4.5, 2.5],
-    hemiSky: 0x9a7a9c, hemiGround: 0x453a52, hemiIntensity: 0.6,
-    fogNear: 12, fogFar: 30,
+  { // Hollow Deeps: golden beach light, moist sea-haze rolling in
+    sunColor: 0xffe3a1, sunIntensity: 2.1, sunPosition: [8, 7.5, 5],
+    hemiSky: 0xdff2ea, hemiGround: 0xcabf96, hemiIntensity: 0.95,
+    fogNear: 14, fogFar: 34,
   },
 ];
 
@@ -173,17 +180,24 @@ export function themeFor(character = {}, seed = 0) {
     colors.sky = lerpHex(colors.sky, layerTint.sky, 0.85);
   }
 
-  const light = LAYER_LIGHT[layer] || LAYER_LIGHT[1];
+  let light = LAYER_LIGHT[layer] || LAYER_LIGHT[1];
+  // Sun-blessed isles really are: warmer, brighter light wherever they float.
+  if (modifiers.includes("sol")) {
+    light = { ...light, sunColor: 0xfff3cf, sunIntensity: light.sunIntensity * 1.25 };
+  }
 
   // What grows: an ash isle burns regardless of altitude; otherwise the
-  // layer decides (alpine up high, dusk flora down deep).
+  // layer decides (alpine pines up high, palms down near the ocean).
   const flora = modifiers.includes("asha")
     ? "charred"
-    : layer === 0 ? "alpine" : layer === 2 ? "dusk" : "temperate";
+    : layer === 0 ? "alpine" : layer === 2 ? "shore" : "temperate";
 
-  // Landscape relief: craggier hills in the thin air of the Reaches,
-  // flatter boggy ground in the Deeps; crag isles are jagged everywhere.
-  let hillAmp = layer === 0 ? 1.7 : layer === 2 ? 0.65 : 1;
+  // The low layer's people live off the sea below: fishing piers off the rim.
+  if (layer === 2) props.push("pier", "pier");
+
+  // Landscape relief: craggier hills in the thin air of the Reaches, gentle
+  // dunes down at the shore; crag isles are jagged everywhere.
+  let hillAmp = layer === 0 ? 1.7 : layer === 2 ? 0.8 : 1;
   if (modifiers.includes("crag")) hillAmp *= 1.5;
   hillAmp *= range(vr, 0.92, 1.1);
 
@@ -192,5 +206,7 @@ export function themeFor(character = {}, seed = 0) {
     leafyRatio: vary.leafyRatio,
     terrain: { hillAmp, riverWidth: vary.riverWidth },
     extraLilyPads: modifiers.includes("tide"),
+    // Pyre isles' wyverns run scorched (as do any on an ash isle).
+    wyvernScorched: modifiers.includes("pyre") || modifiers.includes("asha"),
   };
 }

@@ -234,7 +234,7 @@
     position: fixed; inset: 0;
     background: rgba(20, 14, 8, 0.55);
     display: none;
-    z-index: 40;
+    z-index: 55; /* above the village overlay — it opens from the tent */
     align-items: flex-start; justify-content: center;
     padding: calc(env(safe-area-inset-top, 12px) + 20px) 12px 20px;
     overflow-y: auto;
@@ -297,11 +297,6 @@
     border-radius: 3px;
     display: block;
   }
-  #hangar-empty {
-    padding: 20px 16px; text-align: center;
-    font-style: italic; opacity: 0.78; font-size: 13px;
-  }
-
   /* ===== Landing (3D village) ===== */
   #land-btn {
     display: none;
@@ -594,7 +589,6 @@
           <div id="menu-panel" role="menu">
             <button id="new-voyage-btn" role="menuitem">New Voyage</button>
             <button id="grand-voyage-btn" role="menuitem">Grand Voyage</button>
-            <button id="hangar-menu-item" role="menuitem">Hangar</button>
             <button id="debug-menu-item" role="menuitem">Debug</button>
           </div>
         </div>
@@ -604,12 +598,11 @@
     <div id="hangar-overlay" aria-hidden="true">
       <div id="hangar-panel" role="dialog" aria-labelledby="hangar-title">
         <div class="hangar-head">
-          <h2 id="hangar-title">Hangar</h2>
-          <button id="hangar-close" aria-label="Close hangar">Close</button>
+          <h2 id="hangar-title">Skywright's Stable</h2>
+          <button id="hangar-close" aria-label="Close stable">Close</button>
         </div>
-        <p class="hangar-sub">Choose a ship. Swap is only allowed while docked at an island.</p>
+        <p class="hangar-sub">The mounts stabled at this isle. Every mount favors a home altitude — sea-beasts low, wind-things high.</p>
         <div id="hangar-grid"></div>
-        <div id="hangar-empty" style="display:none;">You must be docked at an island to swap ships. Sail close to one, then try again.</div>
       </div>
     </div>
 
@@ -1030,11 +1023,17 @@
   // The save format is versioned by `schemaVersion` inside the payload. When
   // the shape changes: bump SAVE_SCHEMA and add an upgrade step below. Never
   // bump the localStorage key — that strands every existing save.
-  const SAVE_SCHEMA = 3;
+  const SAVE_SCHEMA = 5;
   const LEGACY_SAVE_KEY = 'skybound-poc-v2';
 
   // Each entry upgrades a save from that version to the next one.
   const SAVE_MIGRATIONS = {
+    // v3 → v4 (rumors): track which islands' noodle houses have already
+    // shared their gossip this voyage. Old saves simply haven't asked yet.
+    3: (old) => ({ ...old, rumors: [] }),
+    // v4 → v5 (trading + mounts): the hold you carry goods in, which
+    // islands you've delivered to, and which mounts you've seen stabled.
+    4: (old) => ({ ...old, hold: [], delivered: [], mountsSeen: old.shipType ? [old.shipType] : [] }),
     // v2 → v3 (altitude layers): v2 saves are flat — top-level islands and
     // reveals, no layers. The old world becomes the middle layer (where all
     // v2 play happened); the other layers are generated fresh from the seed
@@ -1088,6 +1087,13 @@
         parsed = migrateSave(parsed);
         if (!parsed.mapSize) parsed.mapSize = 'small';
         if (!parsed.shipType) parsed.shipType = 'cloudGalleon';
+        // Rumors are objects ({at, layer, x, y, dir, dist}); drop anything
+        // else (e.g. the short-lived string form from early v4 builds).
+        parsed.rumors = (Array.isArray(parsed.rumors) ? parsed.rumors : [])
+          .filter(r => r && typeof r === 'object' && typeof r.at === 'string');
+        if (!Array.isArray(parsed.hold)) parsed.hold = [];
+        if (!Array.isArray(parsed.delivered)) parsed.delivered = [];
+        if (!Array.isArray(parsed.mountsSeen)) parsed.mountsSeen = [parsed.shipType];
         if (parsed.ship && parsed.ship.facingLeft == null) parsed.ship.facingLeft = false;
         if (parsed.layer == null) parsed.layer = DEFAULT_LAYER;
         if (!parsed.layers || !Array.isArray(parsed.layers) || parsed.layers.length !== LAYER_COUNT) {
@@ -1202,6 +1208,10 @@
       mapSize,
       layer: DEFAULT_LAYER,
       layers,
+      rumors: [],
+      hold: [],
+      delivered: [],
+      mountsSeen: ['cloudGalleon'], // you know the mount you ride in on
       ship: {
         x: start.x + 60, y: start.y + 60,
         vx: 0, vy: 0,
@@ -1236,6 +1246,10 @@
       ship: { x: s.ship.x, y: s.ship.y, vx: 0, vy: 0, heading: s.ship.heading, facingLeft: !!s.ship.facingLeft },
       shipType: s.shipType || 'cloudGalleon',
       target: s.target,
+      rumors: s.rumors || [],
+      hold: s.hold || [],
+      delivered: s.delivered || [],
+      mountsSeen: s.mountsSeen || [s.shipType || 'cloudGalleon'],
     };
   }
 
@@ -1876,6 +1890,41 @@
     }
   }
 
+  // Rumored isles: an ✕ over the spot, drawn above fog like the target
+  // marker — you paid for the lead, the chart remembers it.
+  function drawRumorMarkers() {
+    const markers = activeRumorMarkers();
+    if (!markers.length) return;
+    const t = performance.now() * 0.001;
+    for (const r of markers) {
+      const sx = r.x - camera.x + viewW / 2;
+      const sy = r.y - camera.y + viewH / 2;
+      if (sx < -40 || sx > viewW + 40 || sy < -40 || sy > viewH + 40) continue;
+      ctx.save();
+      ctx.globalAlpha = 0.75 + Math.sin(t * 2.2) * 0.15;
+      ctx.lineCap = 'round';
+      const s = 7;
+      // Dark underlay so the ✕ reads over parted sky as well as fog.
+      ctx.strokeStyle = 'rgba(20, 16, 10, 0.55)';
+      ctx.lineWidth = 4.5;
+      ctx.beginPath();
+      ctx.moveTo(sx - s, sy - s); ctx.lineTo(sx + s, sy + s);
+      ctx.moveTo(sx + s, sy - s); ctx.lineTo(sx - s, sy + s);
+      ctx.stroke();
+      ctx.strokeStyle = '#e08050';
+      ctx.lineWidth = 2.4;
+      ctx.stroke();
+      // Slowly turning dashed ring, like a circled spot on a chart.
+      ctx.setLineDash([4, 4]);
+      ctx.lineDashOffset = -t * 6;
+      ctx.lineWidth = 1.3;
+      ctx.beginPath();
+      ctx.arc(sx, sy, 14, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.restore();
+    }
+  }
+
   function drawTargetMarker() {
     if (!state.target) return;
     const sx = state.target.x - camera.x + viewW / 2;
@@ -1921,6 +1970,19 @@
     // Header reflects the current layer (charts are per-layer).
     const headerEl = document.getElementById('map-header');
     if (headerEl) headerEl.textContent = `Chart — ${LAYER_NAMES[state.layer]}`;
+
+    // Voyage ledger in the footer: whole-voyage progress, not just this layer.
+    const hintEl = document.getElementById('map-hint');
+    if (hintEl) {
+      let disc = 0, totalIsles = 0;
+      for (const layer of state.layers) {
+        totalIsles += layer.islands.length;
+        for (const i of layer.islands) if (i.discovered) disc++;
+      }
+      hintEl.textContent =
+        `${disc}/${totalIsles} isles · ${state.mountsSeen.length}/${SHIPS.length} mounts · ` +
+        `${state.delivered.length} deliveries — tap to close`;
+    }
 
     // Parchment background tone (the card itself is parchment; this is the "sea")
     miniCtx.fillStyle = 'rgba(232, 218, 188, 1)';
@@ -1994,6 +2056,26 @@
       if (tx + lw > miniW - 4) tx = x - 5 - lw;
       miniCtx.fillStyle = 'rgba(42, 36, 23, 0.85)';
       miniCtx.fillText(label, tx, ty);
+    }
+
+    // Rumored isles: a faint hollow dot (charted by hearsay, no name yet)
+    // circled by an ✕ until you actually find the place.
+    for (const r of activeRumorMarkers()) {
+      const x = wx(r.x), y = wy(r.y);
+      miniCtx.beginPath();
+      miniCtx.arc(x, y, 3, 0, Math.PI * 2);
+      miniCtx.fillStyle = 'rgba(58, 74, 46, 0.25)';
+      miniCtx.fill();
+      miniCtx.strokeStyle = 'rgba(42, 36, 23, 0.45)';
+      miniCtx.lineWidth = 0.8;
+      miniCtx.stroke();
+      miniCtx.strokeStyle = 'rgba(201, 98, 46, 0.9)';
+      miniCtx.lineWidth = 1.6;
+      miniCtx.lineCap = 'round';
+      miniCtx.beginPath();
+      miniCtx.moveTo(x - 6, y - 6); miniCtx.lineTo(x + 6, y + 6);
+      miniCtx.moveTo(x + 6, y - 6); miniCtx.lineTo(x - 6, y + 6);
+      miniCtx.stroke();
     }
 
     // Target marker
@@ -2128,6 +2210,9 @@
     // back. Closer islands ride higher on the alpha scale.
     drawEdgeLabels();
 
+    // Rumor markers on top of fog — chart knowledge, not line of sight
+    drawRumorMarkers();
+
     // Target marker on top of fog (so you can see it through fog faintly)
     drawTargetMarker();
 
@@ -2219,8 +2304,13 @@
       distEl.textContent = '—';
       setLandTarget(state.transition ? null : dockedAt);
     }
-    const disc = state.islands.filter(i => i.discovered).length;
-    countEl.textContent = `${disc} / ${state.islands.length} isles`;
+    // Discovery spans the whole voyage — all three altitudes.
+    let disc = 0, totalIsles = 0;
+    for (const layer of state.layers) {
+      totalIsles += layer.islands.length;
+      for (const i of layer.islands) if (i.discovered) disc++;
+    }
+    countEl.textContent = `${disc} / ${totalIsles} isles`;
     updateAltitudeUI();
   }
 
@@ -2341,11 +2431,18 @@
           clearTarget() { state.target = null; },
           ascend, descend, beginTransition,
           openVillage, closeVillage, villageSeedFor, villageBuildingCount,
+          askRumorAt, rumorKey, activeRumorMarkers, markUnfoundIsle,
+          setRumorRoll(fn) { rumorRoll = fn; },
+          islandGoods, takeGoodAt, deliverGoodAt,
+          shipsAvailableAt, openHangar, closeHangar,
+          get SHIPS() { return SHIPS; },
+          get SHIP_HOME_LAYER() { return SHIP_HOME_LAYER; },
           setVillageLoader(fn) { villageLoader = fn; },
           get villageOpen() { return villageOpen; },
           get villageView() { return villageView; },
           get saveKey() { return SAVE_KEY; },
           constants: {
+            SAVE_SCHEMA,
             WORLD, ISLAND_COUNT, MIN_ISLAND_DIST,
             REVEAL_RADIUS, DEDUP_RADIUS, REVEAL_STEP, FOG_SCALE,
             DISCOVERY_RADIUS,
@@ -2448,95 +2545,123 @@
       });
     }
 
-    // ----- Hangar -----
-    const SHIPS = window.SkyboundShips.CATALOG;
-    const hangarMenuItem = document.getElementById('hangar-menu-item');
-    const hangarOverlay  = document.getElementById('hangar-overlay');
-    const hangarClose    = document.getElementById('hangar-close');
-    const hangarGrid     = document.getElementById('hangar-grid');
-    const hangarEmpty    = document.getElementById('hangar-empty');
-
-    function isDocked() {
-      return !!islandAt(state.ship.x, state.ship.y, DOCK_PAD);
-    }
-
-    const hangarCanvases = [];   // {id, ctx, W, H}
-    function buildHangarGrid() {
-      hangarGrid.innerHTML = '';
-      hangarCanvases.length = 0;
-      const dpr = window.devicePixelRatio || 1;
-      for (const s of SHIPS) {
-        const card = document.createElement('div');
-        card.className = 'hangar-card' + (s.id === state.shipType ? ' selected' : '');
-        card.dataset.shipId = s.id;
-        const tag = s.id === state.shipType ? '<span class="hc-tag">Current</span>' : '';
-        card.innerHTML = `<div class="hc-name">${s.name}</div><canvas></canvas>${tag}`;
-        hangarGrid.appendChild(card);
-        const canvas = card.querySelector('canvas');
-        const W = 180, H = 120;
-        canvas.width = W * dpr; canvas.height = H * dpr;
-        const cctx = canvas.getContext('2d');
-        cctx.scale(dpr, dpr);
-        hangarCanvases.push({ id: s.id, ctx: cctx, W, H });
-
-        card.addEventListener('click', () => {
-          if (!isDocked()) return;
-          state.shipType = s.id;
-          saveState();
-          buildHangarGrid();      // refresh selection state
-          window.__DBG?.push('info', `ship → ${s.id}`);
-        });
-      }
-    }
-
-    let hangarRafId = null;
-    function renderHangarFrame(tMs) {
-      const t = tMs * 0.001;
-      for (const c of hangarCanvases) {
-        const { ctx: hctx, W, H } = c;
-        // Sky
-        const g = hctx.createLinearGradient(0, 0, 0, H);
-        g.addColorStop(0, '#aac3da'); g.addColorStop(1, '#d4dde5');
-        hctx.fillStyle = g;
-        hctx.fillRect(0, 0, W, H);
-        // Center the ship at game scale, gentle bob, "sailing"
-        hctx.save();
-        hctx.translate(W / 2, H / 2 + Math.sin(t * 1.2) * 1.6);
-        (SHIP_DRAWERS[c.id] || SHIP_DRAWERS.sloop)(hctx, t, 0.8);
-        hctx.restore();
-      }
-      hangarRafId = requestAnimationFrame(renderHangarFrame);
-    }
-
-    function openHangar() {
-      setMenu(false);
-      buildHangarGrid();
-      const docked = isDocked();
-      hangarGrid.style.display = docked ? 'grid' : 'none';
-      hangarEmpty.style.display = docked ? 'none' : 'block';
-      hangarOverlay.classList.add('open');
-      hangarOverlay.setAttribute('aria-hidden', 'false');
-      if (hangarRafId == null) hangarRafId = requestAnimationFrame(renderHangarFrame);
-    }
-    function closeHangar() {
-      hangarOverlay.classList.remove('open');
-      hangarOverlay.setAttribute('aria-hidden', 'true');
-      if (hangarRafId != null) { cancelAnimationFrame(hangarRafId); hangarRafId = null; }
-    }
-
-    if (hangarMenuItem) {
-      hangarMenuItem.addEventListener('click', (e) => {
-        e.stopPropagation();
-        openHangar();
-      });
-    }
-    if (hangarClose) hangarClose.addEventListener('click', closeHangar);
-    if (hangarOverlay) {
-      hangarOverlay.addEventListener('click', (e) => {
-        if (e.target === hangarOverlay) closeHangar();
-      });
-    }
   })();
+
+  // ----- The Skywright's stable (was: menu hangar) -----
+  // Mounts are creatures and craft that live somewhere, so the stable is
+  // reached from a village's Skywright's Tent — not a menu. What's stabled
+  // is deterministic per (voyage, island): every mount favors a home
+  // altitude (sea-beasts near the ocean below, wind-things up high), and
+  // each is guaranteed stabled at one isle of its home layer per voyage, so
+  // the full collection is always findable.
+  const SHIPS = window.SkyboundShips.CATALOG;
+  const SHIP_HOME_LAYER = {
+    wyvern: 0, windSerpent: 0,               // High Reaches
+    sloop: 1, butterfly: 1, cloudGalleon: 1, // Cloud Sea
+    seaTurtle: 2, manta: 2, jellyfish: 2,    // Hollow Deeps, over the sea
+  };
+
+  function stableHash(str) {
+    let h = state.seed >>> 0;
+    for (let i = 0; i < str.length; i++) h = Math.imul(h ^ str.charCodeAt(i), 0x01000193) >>> 0;
+    return rng(h)();
+  }
+
+  function shipsAvailableAt(island) {
+    const key = rumorKey(island);
+    const avail = [];
+    for (const s of SHIPS) {
+      const home = (SHIP_HOME_LAYER[s.id] ?? 1) === state.layer;
+      if (stableHash(key + '|' + s.id) < (home ? 0.6 : 0.18)) {
+        avail.push(s.id);
+      } else if (home) {
+        // Findability guarantee: one designated isle per mount on its
+        // home layer always stables it.
+        const idx = Math.floor(stableHash('guarantee|' + s.id) * state.islands.length);
+        if (state.islands[idx] === island) avail.push(s.id);
+      }
+    }
+    if (!avail.includes(state.shipType)) avail.unshift(state.shipType); // yours is always stabled
+    return avail;
+  }
+
+  const hangarOverlay = document.getElementById('hangar-overlay');
+  const hangarClose   = document.getElementById('hangar-close');
+  const hangarGrid    = document.getElementById('hangar-grid');
+
+  const hangarCanvases = [];   // {id, ctx, W, H}
+  function buildHangarGrid(island) {
+    hangarGrid.innerHTML = '';
+    hangarCanvases.length = 0;
+    const dpr = window.devicePixelRatio || 1;
+    const avail = shipsAvailableAt(island);
+    for (const s of SHIPS) {
+      if (!avail.includes(s.id)) continue;
+      const card = document.createElement('div');
+      card.className = 'hangar-card' + (s.id === state.shipType ? ' selected' : '');
+      card.dataset.shipId = s.id;
+      const tag = s.id === state.shipType ? '<span class="hc-tag">Current</span>' : '';
+      card.innerHTML = `<div class="hc-name">${s.name}</div><canvas></canvas>${tag}`;
+      hangarGrid.appendChild(card);
+      const canvas = card.querySelector('canvas');
+      const W = 180, H = 120;
+      canvas.width = W * dpr; canvas.height = H * dpr;
+      const cctx = canvas.getContext('2d');
+      cctx.scale(dpr, dpr);
+      hangarCanvases.push({ id: s.id, ctx: cctx, W, H });
+
+      card.addEventListener('click', () => {
+        state.shipType = s.id;
+        saveState();
+        buildHangarGrid(island);      // refresh selection state
+        window.__DBG?.push('info', `mount → ${s.id}`);
+      });
+    }
+  }
+
+  let hangarRafId = null;
+  function renderHangarFrame(tMs) {
+    const t = tMs * 0.001;
+    for (const c of hangarCanvases) {
+      const { ctx: hctx, W, H } = c;
+      // Sky
+      const g = hctx.createLinearGradient(0, 0, 0, H);
+      g.addColorStop(0, '#aac3da'); g.addColorStop(1, '#d4dde5');
+      hctx.fillStyle = g;
+      hctx.fillRect(0, 0, W, H);
+      // Center the ship at game scale, gentle bob, "sailing"
+      hctx.save();
+      hctx.translate(W / 2, H / 2 + Math.sin(t * 1.2) * 1.6);
+      (SHIP_DRAWERS[c.id] || SHIP_DRAWERS.sloop)(hctx, t, 0.8);
+      hctx.restore();
+    }
+    hangarRafId = requestAnimationFrame(renderHangarFrame);
+  }
+
+  function openHangar(island) {
+    // Seeing a stable teaches you what mounts exist here — the collection.
+    let learned = false;
+    for (const id of shipsAvailableAt(island)) {
+      if (!state.mountsSeen.includes(id)) { state.mountsSeen.push(id); learned = true; }
+    }
+    if (learned) saveState();
+    buildHangarGrid(island);
+    hangarOverlay.classList.add('open');
+    hangarOverlay.setAttribute('aria-hidden', 'false');
+    if (hangarRafId == null) hangarRafId = requestAnimationFrame(renderHangarFrame);
+  }
+  function closeHangar() {
+    hangarOverlay.classList.remove('open');
+    hangarOverlay.setAttribute('aria-hidden', 'true');
+    if (hangarRafId != null) { cancelAnimationFrame(hangarRafId); hangarRafId = null; }
+  }
+
+  if (hangarClose) hangarClose.addEventListener('click', closeHangar);
+  if (hangarOverlay) {
+    hangarOverlay.addEventListener('click', (e) => {
+      if (e.target === hangarOverlay) closeHangar();
+    });
+  }
 
   // ----- Landing: dock at an island, go ashore into its 3D village -----
   // Each island hosts a procedural village (the "tethered village" diorama).
@@ -2584,6 +2709,151 @@
     return villageModulePromise;
   };
 
+  // ----- Rumors: the first real thing to do ashore -----
+  // Ask at a village's Noodle House and a sailor points out the nearest
+  // isle you haven't found: the fog parts over it on the map. Once per
+  // island per voyage (tracked in the save as `rumors`); discovering the
+  // isle — its name, the log count — still takes sailing there.
+  function rumorKey(island) {
+    return `${state.layer}:${Math.round(island.x)},${Math.round(island.y)}`;
+  }
+
+  // Rumors whose isle you haven't found yet, on the current layer — these
+  // carry an ✕ marker on the map and the chart until discovery.
+  function activeRumorMarkers() {
+    const out = [];
+    for (const r of state.rumors) {
+      if (r.layer !== state.layer) continue;
+      const isle = islandAt(r.x, r.y, 4);
+      if (isle && isle.discovered) continue;
+      out.push(r);
+    }
+    return out;
+  }
+
+  // How sailors describe an isle whose name marks it out — keyed by the
+  // modifier vocabulary (see MODIFIER_TOKENS / islands.js art).
+  const RUMOR_FLAVOR = {
+    asha: 'fire-scarred', glen: 'mine-riddled', helm: 'war-bannered',
+    hollow: 'overgrown', crag: 'craggy', tide: 'tide-washed',
+    keep: 'castle-crowned', spire: 'spire-topped', wing: 'winged',
+    sol: 'sun-haloed', wyn: 'wyvern-haunted', pyre: 'wyvern-haunted',
+  };
+
+  // Half of all rumors point at a special isle (one whose name modifiers
+  // give it distinct art) when any remain unfound. Deterministic per
+  // voyage and ask-order, like everything else in the world; the seam is
+  // overridable so tests can force either branch.
+  let rumorRoll = () =>
+    rng((state.seed ^ Math.imul(state.rumors.length + 1, 0x9E3779B9)) >>> 0)() < 0.5;
+
+  // Pick an unfound isle near `from`, push a chart marker for it, part the
+  // fog over it. Shared by rumors and delivery rewards. Returns the marker
+  // entry (with a human `what` description) or null if the layer is fully
+  // charted. Caller saves.
+  function markUnfoundIsle(from, { atKey, preferSpecial }) {
+    const unfound = state.islands.filter(i => !i.discovered && i !== from);
+    if (!unfound.length) return null;
+    const specials = unfound.filter(i => (i.modifiers || []).length > 0);
+    const useSpecial = preferSpecial && specials.length > 0;
+    const pool = useSpecial ? specials : unfound;
+
+    let best = null, bestD = Infinity;
+    for (const i of pool) {
+      const d = Math.hypot(i.x - from.x, i.y - from.y);
+      if (d < bestD) { bestD = d; best = i; }
+    }
+    const flavor = useSpecial ? (RUMOR_FLAVOR[best.modifiers[0]] || 'strange') : null;
+    const dir = compassDir(Math.atan2(best.y - from.y, best.x - from.x)).split(' ')[0];
+    const entry = {
+      at: atKey,
+      layer: state.layer,
+      x: Math.round(best.x),
+      y: Math.round(best.y),
+      dir,
+      dist: Math.round(bestD),
+      ...(flavor ? { flavor } : {}),
+    };
+    state.rumors.push(entry);
+    // Part the fog over the isle (a little wider than one stamp so the
+    // whole blob shows through when you get there).
+    stampReveal(best.x, best.y);
+    stampReveal(best.x - REVEAL_RADIUS * 0.55, best.y);
+    stampReveal(best.x + REVEAL_RADIUS * 0.55, best.y);
+    return { ...entry, what: flavor ? `a ${flavor} isle` : 'an isle' };
+  }
+
+  function askRumorAt(island) {
+    const spent = state.rumors.find(r => r.at === rumorKey(island));
+    if (spent) {
+      // The tale doesn't change — repeat it so the lead is never lost.
+      const what = spent.flavor ? `${spent.flavor} isle` : 'isle';
+      return {
+        ok: false,
+        message: `The cook shrugs — same tale as before: a ${what} to the ${spent.dir}, some ${spent.dist} lg out. The ✕ still marks it on your chart.`,
+      };
+    }
+    const mark = markUnfoundIsle(island, { atKey: rumorKey(island), preferSpecial: rumorRoll() });
+    if (!mark) {
+      return { ok: false, message: 'Every isle at this altitude is already on your chart.' };
+    }
+    saveState();
+    window.__DBG?.push('info', `rumor at ${island.name}: marked ${mark.flavor || 'plain'} isle near (${mark.x}, ${mark.y})`);
+    return {
+      ok: true,
+      message: `Over noodles, a sailor swears there’s ${mark.what} to the ${mark.dir}, some ${mark.dist} lg out. An ✕ marks it on your map and chart.`,
+    };
+  }
+
+  // ----- Trading: barter between altitudes, no coin -----
+  // Every island produces something (its layer's staple, or a rarer good if
+  // its name marks it) and wants a staple from a different altitude. Carry
+  // goods in the hold — no capacity, no prices — and grateful villages pay
+  // in knowledge: they mark an unfound isle on your chart.
+  const LAYER_GOODS = ['glacier ice', 'skywheat', 'salt fish']; // by layer index
+  const MODIFIER_GOODS = { glen: 'iron ore', hollow: 'wild berries', asha: 'ashglass', tide: 'pearls' };
+
+  function islandGoods(island) {
+    const special = (island.modifiers || []).find(m => MODIFIER_GOODS[m]);
+    const produce = special ? MODIFIER_GOODS[special] : LAYER_GOODS[state.layer];
+    const others = [0, 1, 2].filter(l => l !== state.layer);
+    const wantLayer = others[villageSeedFor(island) % 2];
+    return { produce, want: LAYER_GOODS[wantLayer], wantFrom: LAYER_NAMES[wantLayer] };
+  }
+
+  function takeGoodAt(island) {
+    const { produce } = islandGoods(island);
+    if (state.hold.includes(produce)) {
+      return { ok: false, message: `You already carry ${produce}. No hurry — the hold is roomy.` };
+    }
+    state.hold.push(produce);
+    saveState();
+    return { ok: true, message: `The workshop loads ${produce} aboard. Someone at another altitude will be glad of it.` };
+  }
+
+  function deliverGoodAt(island) {
+    const key = rumorKey(island);
+    const { want, wantFrom } = islandGoods(island);
+    if (state.delivered.includes(key)) {
+      return { ok: false, message: 'Their storeroom is still stocked from your last delivery.' };
+    }
+    const idx = state.hold.indexOf(want);
+    if (idx < 0) {
+      return { ok: false, message: `They’re hoping for ${want} from the ${wantFrom}.` };
+    }
+    state.hold.splice(idx, 1);
+    state.delivered.push(key);
+    const mark = markUnfoundIsle(island, { atKey: 'delivery:' + key, preferSpecial: true });
+    saveState();
+    window.__DBG?.push('info', `delivered ${want} at ${island.name} (${state.delivered.length} total)`);
+    return {
+      ok: true,
+      message: `${want[0].toUpperCase() + want.slice(1)}, at last! ` + (mark
+        ? `In thanks they mark ${mark.what} to the ${mark.dir} on your chart.`
+        : 'The whole village turns out to thank you.'),
+    };
+  }
+
   async function openVillage(island) {
     if (villageOpen || !island) return;
     villageOpen = true;
@@ -2602,6 +2872,40 @@
         // The island's identity shapes its village: name modifiers pick the
         // terrain/props theme, the altitude layer tints the whole palette.
         character: { modifiers: island.modifiers || [], layer: state.layer },
+        // Building roles — the game lives in these cards now: gossip at the
+        // Noodle House, barter at the Workshop, mounts at the Skywright's.
+        actionFor: (kind) => {
+          if (kind === 'mushroom') return { id: 'rumor', label: 'Ask for rumors' };
+          if (kind === 'tent') return { id: 'hangar', label: 'Visit the skywright' };
+          if (kind === 'cottage') {
+            const goods = islandGoods(island);
+            const actions = [];
+            if (state.hold.includes(goods.want) && !state.delivered.includes(rumorKey(island))) {
+              actions.push({ id: 'deliver', label: `Deliver ${goods.want}` });
+            }
+            if (!state.hold.includes(goods.produce)) {
+              actions.push({ id: 'take', label: `Take on ${goods.produce}` });
+            }
+            return actions;
+          }
+          return null;
+        },
+        onAction: (kind, id) => {
+          if (id === 'rumor') return askRumorAt(island);
+          if (id === 'take') return takeGoodAt(island);
+          if (id === 'deliver') return deliverGoodAt(island);
+          if (id === 'hangar') { openHangar(island); return null; }
+          return null;
+        },
+        infoFor: (kind) => {
+          if (kind === 'cottage') {
+            const goods = islandGoods(island);
+            return `They trade ${goods.produce} here, and hope for ${goods.want} from the ${goods.wantFrom}.`;
+          }
+          if (kind === 'tent') return 'Mounts stabled and swapped. What’s here varies by isle and altitude.';
+          if (kind === 'mushroom') return 'Hot broth and hotter gossip.';
+          return null;
+        },
       });
       // Match the overlay to the village's themed sky (dusk isles land at dusk).
       if (villageView.skyColor) villageOverlay.style.background = villageView.skyColor;
