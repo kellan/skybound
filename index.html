@@ -617,6 +617,10 @@
           <span class="label">Altitude</span>
           <span class="value" id="altitude-val">—</span>
         </div>
+        <div class="row" style="margin-top:4px;">
+          <span class="label">Winds</span>
+          <span class="value" id="wind-val">—</span>
+        </div>
         <div class="divider"></div>
         <div class="row">
           <span class="label">Bound for</span>
@@ -1532,6 +1536,99 @@
     }
   }
 
+  // ----- Air streams (weather) -----
+  // A few rivers of wind per layer, deterministic from (seed, layer) like
+  // the islands — regenerated on load, nothing saved. Sail with one and
+  // surge ahead; fight one and crawl. They're sky, not terrain, so they
+  // draw above fog: visible even over uncharted sea, which makes them
+  // routing information like everything else in this game.
+  const WIND_LAYER_CHARACTER = [
+    { count: 4, strength: [42, 58], halfWidth: [130, 200] }, // High Reaches: hard, narrow gales
+    { count: 3, strength: [30, 44], halfWidth: [160, 240] }, // Cloud Sea: steady trades
+    { count: 2, strength: [20, 32], halfWidth: [210, 290] }, // Hollow Deeps: broad soft sea-breezes
+  ];
+  const WIND_MAX = 65; // cap where streams overlap
+
+  // Catmull-Rom through control points, flattened to a polyline.
+  function sampleSpline(cp, samples) {
+    const pts = [];
+    const P = [cp[0], ...cp, cp[cp.length - 1]];
+    for (let i = 0; i < samples; i++) {
+      const t = (i / (samples - 1)) * (cp.length - 1);
+      const k = Math.min(Math.floor(t), cp.length - 2);
+      const u = t - k;
+      const [a, b, c, d] = [P[k], P[k + 1], P[k + 2], P[k + 3]];
+      pts.push({
+        x: 0.5 * ((2 * b.x) + (-a.x + c.x) * u + (2 * a.x - 5 * b.x + 4 * c.x - d.x) * u * u + (-a.x + 3 * b.x - 3 * c.x + d.x) * u * u * u),
+        y: 0.5 * ((2 * b.y) + (-a.y + c.y) * u + (2 * a.y - 5 * b.y + 4 * c.y - d.y) * u * u + (-a.y + 3 * b.y - 3 * c.y + d.y) * u * u * u),
+      });
+    }
+    return pts;
+  }
+
+  let windCacheKey = null;
+  let windStreams = [];
+  function windStreamsForCurrentLayer() {
+    const cacheKey = `${state.seed}:${state.layer}:${WORLD.w}x${WORLD.h}`;
+    if (windCacheKey === cacheKey) return windStreams;
+    const spec = WIND_LAYER_CHARACTER[state.layer] || WIND_LAYER_CHARACTER[1];
+    const r = rng((layerSeed(state.seed, state.layer) ^ 0x77EA7BEE) >>> 0);
+    windStreams = [];
+    for (let s = 0; s < spec.count; s++) {
+      // Rim to rim across the ellipse with a couple of lazy bends.
+      const a0 = r() * Math.PI * 2;
+      const a1 = a0 + Math.PI + (r() - 0.5) * 1.2;
+      const p0 = { x: WORLD.cx + Math.cos(a0) * WORLD.rx * 1.05, y: WORLD.cy + Math.sin(a0) * WORLD.ry * 1.05 };
+      const p3 = { x: WORLD.cx + Math.cos(a1) * WORLD.rx * 1.05, y: WORLD.cy + Math.sin(a1) * WORLD.ry * 1.05 };
+      const bend = (t) => ({
+        x: p0.x + (p3.x - p0.x) * t + (r() - 0.5) * WORLD.rx * 0.55,
+        y: p0.y + (p3.y - p0.y) * t + (r() - 0.5) * WORLD.ry * 0.55,
+      });
+      windStreams.push({
+        pts: sampleSpline([p0, bend(0.33), bend(0.66), p3], 48),
+        halfWidth: spec.halfWidth[0] + r() * (spec.halfWidth[1] - spec.halfWidth[0]),
+        strength: spec.strength[0] + r() * (spec.strength[1] - spec.strength[0]),
+      });
+    }
+    windCacheKey = cacheKey;
+    return windStreams;
+  }
+
+  // Wind vector at a world point: sum of every stream whose band covers it,
+  // each blowing along its local tangent, feathered toward the band edge.
+  function windAt(x, y) {
+    let wx = 0, wy = 0;
+    for (const stream of windStreamsForCurrentLayer()) {
+      const pts = stream.pts;
+      let bestD2 = Infinity, bestI = 0;
+      for (let i = 0; i < pts.length - 1; i++) {
+        const ax = pts[i].x, ay = pts[i].y;
+        const bx = pts[i + 1].x, by = pts[i + 1].y;
+        const dx = bx - ax, dy = by - ay;
+        const len2 = dx * dx + dy * dy || 1;
+        let t = ((x - ax) * dx + (y - ay) * dy) / len2;
+        t = Math.max(0, Math.min(1, t));
+        const px = ax + dx * t - x, py = ay + dy * t - y;
+        const d2 = px * px + py * py;
+        if (d2 < bestD2) { bestD2 = d2; bestI = i; }
+      }
+      const d = Math.sqrt(bestD2);
+      if (d >= stream.halfWidth) continue;
+      const edge = 1 - d / stream.halfWidth;
+      const falloff = edge * edge * (3 - 2 * edge); // smoothstep
+      const a = pts[bestI], b = pts[bestI + 1];
+      const tl = Math.hypot(b.x - a.x, b.y - a.y) || 1;
+      wx += ((b.x - a.x) / tl) * stream.strength * falloff;
+      wy += ((b.y - a.y) / tl) * stream.strength * falloff;
+    }
+    const mag = Math.hypot(wx, wy);
+    if (mag < 0.5) return null;
+    if (mag > WIND_MAX) { wx = wx / mag * WIND_MAX; wy = wy / mag * WIND_MAX; }
+    return { x: wx, y: wy };
+  }
+
+  let shipWind = { x: 0, y: 0 }; // what's pushing the ship right now (HUD)
+
   function update(dt) {
     const ship = state.ship;
 
@@ -1632,9 +1729,25 @@
       ship.vy = ship.vy / sp * SHIP_MAX_SPEED;
     }
 
+    // Air streams push the ship — full strength in open sky, feathered off
+    // approaching a target so arrivals stay clean, and only while actually
+    // under way (a docked ship shouldn't creep off its isle).
+    let wx = 0, wy = 0;
+    const wind = (state.target || sp > 8) ? windAt(ship.x, ship.y) : null;
+    if (wind) {
+      let scale = 1;
+      if (state.target) {
+        const d = Math.hypot(state.target.x - ship.x, state.target.y - ship.y);
+        scale = Math.min(1, d / 140);
+      }
+      wx = wind.x * scale;
+      wy = wind.y * scale;
+    }
+    shipWind.x = wx; shipWind.y = wy;
+
     // Move
-    ship.x += ship.vx * dt;
-    ship.y += ship.vy * dt;
+    ship.x += (ship.vx + wx) * dt;
+    ship.y += (ship.vy + wy) * dt;
 
     clampShipToBounds();
 
@@ -1915,6 +2028,48 @@
     }
   }
 
+  // Air streams: drifting streaks riding each band, drawn above fog (wind
+  // is sky, not terrain — you can read it over uncharted sea and plan).
+  function drawWinds() {
+    const t = performance.now() * 0.001;
+    ctx.save();
+    ctx.lineCap = 'round';
+    for (let s = 0; s < windStreamsForCurrentLayer().length; s++) {
+      const stream = windStreams[s];
+      const pts = stream.pts;
+      const N = 26; // streak particles per stream
+      for (let n = 0; n < N; n++) {
+        // Each streak rides the polyline, looping at its own offset; a hash
+        // spreads them across the band width.
+        const jitter = ((n * 73 + s * 131) % 100) / 100 - 0.5;
+        const u = ((n / N) + t * (stream.strength / 2600)) % 1;
+        const fi = u * (pts.length - 2);
+        const i = Math.floor(fi);
+        const fu = fi - i;
+        const a = pts[i], b = pts[i + 1];
+        const tl = Math.hypot(b.x - a.x, b.y - a.y) || 1;
+        const tx = (b.x - a.x) / tl, ty = (b.y - a.y) / tl;
+        const px = a.x + (b.x - a.x) * fu - ty * jitter * stream.halfWidth * 1.6;
+        const py = a.y + (b.y - a.y) * fu + tx * jitter * stream.halfWidth * 1.6;
+        const sx = px - camera.x + viewW / 2;
+        const sy = py - camera.y + viewH / 2;
+        if (sx < -60 || sx > viewW + 60 || sy < -60 || sy > viewH + 60) continue;
+        // Fade at band edges and at the loop seam so streaks don't pop.
+        const edge = 1 - Math.abs(jitter) * 2;
+        const seam = Math.min(1, Math.min(u, 1 - u) * 12);
+        ctx.globalAlpha = 0.34 * edge * seam;
+        ctx.strokeStyle = '#eaf4ff';
+        ctx.lineWidth = 1.6;
+        const len = 10 + stream.strength * 0.25;
+        ctx.beginPath();
+        ctx.moveTo(sx - tx * len / 2, sy - ty * len / 2);
+        ctx.lineTo(sx + tx * len / 2, sy + ty * len / 2);
+        ctx.stroke();
+      }
+    }
+    ctx.restore();
+  }
+
   // Rumored isles: an ✕ over the spot, drawn above fog like the target
   // marker — you paid for the lead, the chart remembers it.
   function drawRumorMarkers() {
@@ -2083,6 +2238,35 @@
       miniCtx.fillText(label, tx, ty);
     }
 
+    // Air streams: faint flow-lines with a mid-course arrowhead.
+    miniCtx.save();
+    miniCtx.strokeStyle = 'rgba(90, 120, 150, 0.5)';
+    miniCtx.fillStyle = 'rgba(90, 120, 150, 0.6)';
+    miniCtx.lineWidth = 1.1;
+    miniCtx.setLineDash([5, 4]);
+    for (const stream of windStreamsForCurrentLayer()) {
+      const pts = stream.pts;
+      miniCtx.beginPath();
+      miniCtx.moveTo(wx(pts[0].x), wy(pts[0].y));
+      for (const p of pts) miniCtx.lineTo(wx(p.x), wy(p.y));
+      miniCtx.stroke();
+      // Arrowhead at midcourse showing flow direction.
+      const m = pts[Math.floor(pts.length / 2)];
+      const m2 = pts[Math.floor(pts.length / 2) + 1];
+      const ang = Math.atan2(m2.y - m.y, m2.x - m.x);
+      const mxp = wx(m.x), myp = wy(m.y);
+      miniCtx.save();
+      miniCtx.setLineDash([]);
+      miniCtx.translate(mxp, myp);
+      miniCtx.rotate(ang);
+      miniCtx.beginPath();
+      miniCtx.moveTo(5, 0); miniCtx.lineTo(-3, 3); miniCtx.lineTo(-3, -3);
+      miniCtx.closePath();
+      miniCtx.fill();
+      miniCtx.restore();
+    }
+    miniCtx.restore();
+
     // Rumored isles: a faint hollow dot (charted by hearsay, no name yet)
     // circled by an ✕ until you actually find the place.
     for (const r of activeRumorMarkers()) {
@@ -2235,7 +2419,8 @@
     // back. Closer islands ride higher on the alpha scale.
     drawEdgeLabels();
 
-    // Rumor markers on top of fog — chart knowledge, not line of sight
+    // Weather and chart knowledge ride above the fog
+    drawWinds();
     drawRumorMarkers();
 
     // Target marker on top of fog (so you can see it through fog faintly)
@@ -2313,6 +2498,20 @@
 
   function updateHUD() {
     headingEl.textContent = compassDir(state.ship.heading);
+
+    // Winds: how the local stream treats your current heading.
+    const windEl = document.getElementById('wind-val');
+    if (windEl) {
+      const mag = Math.hypot(shipWind.x, shipWind.y);
+      if (mag < 2) {
+        windEl.textContent = '—';
+      } else {
+        const along = shipWind.x * Math.cos(state.ship.heading) + shipWind.y * Math.sin(state.ship.heading);
+        if (along > mag * 0.45) windEl.textContent = `following +${Math.round(along)}`;
+        else if (along < -mag * 0.45) windEl.textContent = `against −${Math.round(-along)}`;
+        else windEl.textContent = `across ${Math.round(mag)}`;
+      }
+    }
     // Needle points along the ship's heading. Convention: heading 0 = east
     // (which is 90° clockwise from compass-12-o'clock-north), so add 90.
     const deg = state.ship.heading * 180 / Math.PI + 90;
@@ -2459,6 +2658,8 @@
           askRumorAt, rumorKey, activeRumorMarkers, markUnfoundIsle,
           setRumorRoll(fn) { rumorRoll = fn; },
           islandGoods, takeGoodAt, deliverGoodAt,
+          windAt, windStreamsForCurrentLayer,
+          get shipWind() { return shipWind; },
           shipsAvailableAt, openHangar, closeHangar,
           get SHIPS() { return SHIPS; },
           get SHIP_HOME_LAYER() { return SHIP_HOME_LAYER; },
