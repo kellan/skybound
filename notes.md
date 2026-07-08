@@ -9,6 +9,7 @@ The game adapts a story by the developer's kid, and her artwork is the visual so
 - **The islands float above an endless ocean — there is no land below.** The whole world is sky islands stacked over open sea.
 - **Altitude is climate.** Climbing gets colder and clearer; descending gets warmer and more maritime. This is why the High Reaches read alpine (snow pines, thin pale air) and the Hollow Deeps read as a shore (golden light, sea haze, palms) — *not* dark. An earlier "dusky deeps" look was retired for contradicting this; it's parked in `decor.js` as the unused `dusk` flora.
 - **The lowest islands live off the sea.** Her artwork shows palm trees on some islands and people fishing off the lower ones — hence the fishing piers on low-layer village rims, rods and lines hanging toward the water below.
+- **Floating cloud forests** (incoming — artwork and notes on the way): her idea for what lives in the open sky between islands. Earmarked as the mid-sky content that makes the sparser map feel inhabited rather than empty. Design questions to settle from her material: can you sail into/through one or land in it? do they drift or stay put? which altitudes do they grow at? are they friendly (shelter, food, hidden things) or risky (get lost, creatures)? do they hide things the chart can't mark?
 - **Open questions to resolve with her** as they come up: what's at the very bottom (can you see or reach the ocean surface? is that why you can't descend further?), what's above the High Reaches, and whether named characters/places from the story should appear as fixed content in the procedural world.
 
 When new story details arrive, they win over anything we invented — record them here first, then align the game.
@@ -103,7 +104,7 @@ CI runs the suite on every push (`.github/workflows/test.yml`). Claude's remote 
 - Give the altitude layers distinct character: started — landing villages now differ fully per layer (palette, light, flora, relief; see village theming above), but the 2D map itself still renders every layer the same. Map-side palette/lighting per layer (cold pale sky up high, warm sea-glow below, per the altitude-as-climate canon), layer-specific island types or hazards, and altitude-varying wind are still open — turn ascend/descend into a decision rather than a toggle
 - The ocean below (canon): the Hollow Deeps sit just above the sea, which suggests the bottom layer's map could show water glinting under the fog instead of the same dark void, and gives descent a natural floor ("the ocean is right there"). What being *on* the water means — if anything — is a story question first
 - Varied island appearance: size tiers, shape archetypes, biome tints
-- Non-island points of interest: wrecks, storm cells, anomalies, beacons, ruins
+- Non-island points of interest: **floating cloud forests first** (canon in progress — see World fiction; the answer to the sparser map's empty stretches), then maybe wrecks, storm cells, anomalies, beacons, ruins
 - Named regions that announce themselves when entered ("The Hollow Reaches…")
 - Map edges that feel meaningful (a wall of cloud? open sea?) rather than hard-clamping
 
